@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     debug = True
     host = 'localhost'
     port = 8000
+    DATABASE = {
+        'user': 'admin',
+        'password': 'admin',
+        'host': 'localhost',
+        'port': 5432,
+        'database': 'crypto_scanner'
+    }
     # TODO: set session key before deploy
     SESSION_SECRET_KEY = ''
 

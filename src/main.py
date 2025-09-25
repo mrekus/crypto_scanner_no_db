@@ -5,7 +5,8 @@ from core.app import app
 
 
 def run_server():
-    # TODO: add remaining startup connections
+    from core.database import setup
+    setup(app)
     uvicorn.run(app, host=cfg.host, port=cfg.port, reload=False)
 
 
