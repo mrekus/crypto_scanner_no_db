@@ -17,4 +17,5 @@ class User(BaseModel):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     last_login = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
+    created_at = Column(DateTime, default=datetime.datetime.now(datetime.UTC))
     role = Column(SqlEnum(ROLE, name='role'), nullable=False, default=ROLE.USER)
