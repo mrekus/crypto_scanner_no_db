@@ -11,8 +11,8 @@ class Settings(BaseSettings):
     host = 'localhost'
     port = 8000
     DATABASE = {
-        'user': 'admin',
-        'password': 'admin',
+        'user': 'crypto_scanner',
+        'password': 'crypto_scanner',
         'host': 'localhost',
         'port': 5432,
         'database': 'crypto_scanner'
