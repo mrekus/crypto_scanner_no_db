@@ -11,12 +11,16 @@ class Settings(BaseSettings):
     debug = True
     host = 'localhost'
     port = 8000
-    
-    database_user: str = ''
-    database_password: str = ''
-    database_host: str = 'localhost'
-    database_port: int = 5432
-    database_name: str = ''
+    database_user = 'crypto_scanner'
+    database_password = 'crypto_scanner'
+    database_host = 'localhost'
+    database_port = 5432
+    database_name = 'crypto_scanner'
+    # database_user: str = ''
+    # database_password: str = ''
+    # database_host: str = 'localhost'
+    # database_port: int = 5432
+    # database_name: str = ''
 
     templates = Jinja2Templates(directory=str(BASE_DIR / 'templates'))
     

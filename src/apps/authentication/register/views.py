@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
-from passlib.hash import bcrypt
+from passlib.hash import argon2
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -27,7 +27,7 @@ def register(data: RegisterData, db: Session = Depends(get_db)):
     if existing:
         return JSONResponse({"error": "User exists"}, status_code=400)
 
-    hashed = bcrypt.hash(data.password)
+    hashed = argon2.hash(data.password)
     user = User(username=data.username, hashed_password=hashed, role=ROLE.USER)
     db.add(user)
     db.commit()

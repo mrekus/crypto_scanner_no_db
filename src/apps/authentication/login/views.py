@@ -3,7 +3,7 @@ import datetime
 from fastapi import APIRouter, Request
 from fastapi.params import Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
-from passlib.hash import bcrypt
+from passlib.hash import argon2
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
@@ -29,7 +29,7 @@ def login_form(request: Request):
 @router.post('/login')
 def login(data: LoginData, request: Request, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(username=data.username).first()
-    if not user or not bcrypt.verify(data.password, user.hashed_password):
+    if not user or not argon2.verify(data.password, user.hashed_password):
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             return JSONResponse({'error': 'Invalid credentials'}, status_code=401)
         return RedirectResponse('/login', status_code=303)
