@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wallet Calculator</title>
+<style>
+:root{
+    --bg:#f0f2f5;
+    --card:#ffffff;
+    --muted:#6b7280;
+    --accent:#4CAF50;
+    --accent-hover:#45a049;
+    --danger:#f44336;
+}
+
+html,body{height:100%;margin:0;}
+body{
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background:var(--bg);
+    display:flex;
+    justify-content:center;
+    align-items:flex-start;
+    padding:40px 24px;
+}
+
+.container{
+    width:min(800px,96%);
+    max-width:800px;
+    background:var(--card);
+    border-radius:12px;
+    padding:36px;
+    box-shadow:0 10px 30px rgba(16,24,40,0.08);
+    display:flex;
+    flex-direction:column;
+    gap:24px;
+    align-items:center;
+}
+
+h1{font-size:26px;margin:0;text-align:center;}
+form{
+    display:flex;
+    flex-direction:column;
+    gap:20px;
+    width:100%;
+    max-width:500px;
+    align-items:center;
+}
+input[type="text"], input[type="date"]{
+    padding:16px;
+    border-radius:12px;
+    border:1px solid #ccc;
+    font-size:16px;
+    width:100%;
+    max-width:400px;
+    box-sizing:border-box;
+}
+button{
+    padding:16px 0;
+    border-radius:12px;
+    border:0;
+    background:var(--accent);
+    color:#fff;
+    font-weight:700;
+    font-size:16px;
+    cursor:pointer;
+    width:100%;
+    max-width:400px;
+}
+button:hover{background:var(--accent-hover);}
+
+.results{
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    width:100%;
+    max-width:500px;
+}
+
+.results .transactions{
+    max-height:300px;
+    overflow-y:auto;
+    background:#111;
+    color:#0f0;
+    font-family:monospace;
+    padding:12px;
+    border-radius:12px;
+    white-space:pre-wrap;
+}
+.toast{
+    position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:12px;color:#fff;font-weight:700;display:none;z-index:1300;
+}
+.toast.error{background:var(--danger)}
+.toast.success{background:var(--accent)}
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Wallet Calculator</h1>
+    <form id="walletForm">
+        <label>
+            <input type="text" name="wallet" placeholder="Wallet Address" required />
+        </label>
+        <label>
+            <input type="date" name="start_date" required />
+        </label>
+        <label>
+            <input type="date" name="end_date" required />
+        </label>
+        <button type="submit">Check Wallet</button>
+    </form>
+
+    <div class="results" id="results">
+        <div><strong>Starting Balance:</strong> <span id="startBalance">-</span></div>
+        <div><strong>Ending Balance:</strong> <span id="endBalance">-</span></div>
+        <div><strong>Transactions:</strong></div>
+        <div class="transactions" id="transactions">No data</div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+const form = document.getElementById('walletForm');
+const startBalanceEl = document.getElementById('startBalance');
+const endBalanceEl = document.getElementById('endBalance');
+const transactionsEl = document.getElementById('transactions');
+const toastEl = document.getElementById('toast');
+
+function showToast(msg,type='error',ms=2500){
+    toastEl.textContent=msg;
+    toastEl.className='toast '+(type==='success'?'success':'error');
+    toastEl.style.display='block';
+    setTimeout(()=> toastEl.style.display='none', ms);
+}
+
+form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    startBalanceEl.textContent='Loading...';
+    endBalanceEl.textContent='Loading...';
+    transactionsEl.textContent='Loading...';
+
+    const formData = new FormData(form);
+    const params = new URLSearchParams(formData);
+
+    try{
+        const evtSource = new EventSource('/check?' + params.toString());
+        transactionsEl.textContent='';
+
+        evtSource.onmessage = function(event){
+            const data = JSON.parse(event.data);
+            if(data.type==='log'){
+                transactionsEl.textContent+=data.msg+'\n';
+                transactionsEl.scrollTop = transactionsEl.scrollHeight;
+            } else if(data.type==='result'){
+                const res = data.data;
+                startBalanceEl.textContent = `${res.starting_balance.eth} ETH (€${res.starting_balance.eur.toFixed(2)})`;
+                endBalanceEl.textContent = `${res.ending_balance.eth} ETH (€${res.ending_balance.eur.toFixed(2)})`;
+
+                if(res.transactions && res.transactions.length){
+                    transactionsEl.textContent = JSON.stringify(res.transactions,null,2);
+                } else {
+                    transactionsEl.textContent='No transactions';
+                }
+
+                evtSource.close();
+            }
+        }
+
+        evtSource.onerror = function(){
+            showToast('Failed to fetch wallet data');
+            evtSource.close();
+        }
+
+    }catch(err){
+        showToast('Network error');
+        startBalanceEl.textContent='-';
+        endBalanceEl.textContent='-';
+        transactionsEl.textContent='No data';
+        console.error(err);
+    }
+});
+</script>
+</body>
+</html>

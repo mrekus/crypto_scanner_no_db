@@ -2,10 +2,11 @@ import importlib
 import os
 from pathlib import Path
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
+from conf import cfg
 from core.database import get_db
 from models.users import User
 
@@ -24,3 +25,22 @@ def get_current_user(request: Request, db: Session = Depends(get_db)):
     if not user_id:
         return None
     return db.query(User).filter_by(id=user_id).first()
+
+
+def require_user(request: Request, db: Session = Depends(get_db)):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        return cfg.templates.TemplateResponse(
+            "error.html",
+            {"request": request, "message": "Authentication required"},
+            status_code=401
+        )
+    user = db.query(User).filter_by(id=user_id).first()
+    if not user:
+        return cfg.templates.TemplateResponse(
+            "error.html",
+            {"request": request, "message": "Invalid session"},
+            status_code=401
+        )
+
+    return user
