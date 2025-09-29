@@ -13,6 +13,7 @@ class WalletAnalyzer:
         self.URL_API = f"https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}"
         self.URL_BLOCKS = f"https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp"
         self.ETH_PRICE_URL = "https://api.coingecko.com/api/v3/coins/ethereum/history"
+        self.ETH_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/market_chart/range'
 
     @staticmethod
     def _iso_date(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> str:
@@ -131,32 +132,46 @@ class WalletAnalyzer:
             starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
             ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
 
-            eth_price_start = await self.get_eth_price_for_date(client, start_date)
-            eth_price_end = await self.get_eth_price_for_date(client, end_date)
-
             transfers_outgoing = await self.get_outgoing_transfers(client, wallet, start_block, end_block)
             transfers_incoming = await self.get_incoming_transfers(client, wallet, start_block, end_block)
 
-            # fetch gas fees only for outgoing transfers
+            headers = {"x-cg-demo-api-key": self.CG_API_KEY}
+            price_resp = await client.get(
+                self.ETH_PRICE_RANGE_URL,
+                headers=headers,
+                params={"vs_currency": "eur", "from": start_ts, "to": end_ts}
+            )
+            price_data = price_resp.json()
+            price_map = {int(ts / 1000): price for ts, price in price_data.get("prices", [])}
+
+            def map_price(ts_float):
+                ts_int = int(ts_float)
+                if ts_int in price_map:
+                    return price_map[ts_int]
+                closest_ts = min(price_map.keys(), key=lambda k: abs(k - ts_int))
+                return price_map[closest_ts]
+
             tasks = [self.fetch_gas_fee(client, tx["hash"]) for tx in transfers_outgoing]
             gas_fees_eth = await asyncio.gather(*tasks)
-
+            total_gas_eur = 0
             for tx, fee in zip(transfers_outgoing, gas_fees_eth):
+                ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
+                price_usd = map_price(ts)
                 tx["gas_fee_eth"] = fee
-                tx["gas_fee_usd"] = fee * eth_price_end
+                tx["gas_fee_eur"] = fee * price_usd
+                total_gas_eur += tx["gas_fee_eur"]
 
             total_gas_eth = sum(gas_fees_eth)
-            total_gas_usd = total_gas_eth * eth_price_end
 
             return {
                 "starting_balance": {
                     "ETH": starting_eth,
-                    "ETH_usd": starting_eth * eth_price_start,
+                    "ETH_usd": starting_eth * map_price(start_ts),
                     "tokens": starting_tokens
                 },
                 "ending_balance": {
                     "ETH": ending_eth,
-                    "ETH_usd": ending_eth * eth_price_end,
+                    "ETH_usd": ending_eth * map_price(end_ts),
                     "tokens": ending_tokens
                 },
                 "transfers": {
@@ -164,11 +179,10 @@ class WalletAnalyzer:
                     "incoming": transfers_incoming
                 },
                 "total_gas_eth": total_gas_eth,
-                "total_gas_usd": total_gas_usd
+                "total_gas_usd": total_gas_eur
             }
 
 
-# Example usage
 WALLET = '0xe742B245cd5A8874aB71c5C004b5B9F877EDf0c0'
 analyzer = WalletAnalyzer()
 result = asyncio.run(analyzer.analyze_wallet(WALLET, "2025-08-29", "2025-09-29"))
