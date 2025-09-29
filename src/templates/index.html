@@ -1,10 +1,254 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Title</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wallet Gas & Balance Checker</title>
+<style>
+    body {
+        font-family: 'Inter', sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #f0f2f5;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+    }
+    .overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(5px);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+    .popup {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        width: 350px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        display: flex;
+        flex-direction: column;
+    }
+    .popup h2 {
+        margin: 0 0 1rem;
+        text-align: center;
+    }
+    .popup input {
+        padding: 0.6rem;
+        margin: 0.5rem 0;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        width: 100%;
+    }
+    .popup button {
+        margin-top: 1rem;
+        padding: 0.7rem;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+    .popup button:hover {
+        background: #45a049;
+    }
+    .main-container {
+        background: white;
+        padding: 2.5rem;
+        border-radius: 12px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+        width: 600px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    .main-container h1 {
+        margin-bottom: 2rem;
+        text-align: center;
+    }
+    .main-container button {
+        width: 200px;
+        margin: 0.5rem 0;
+        padding: 0.8rem;
+        font-size: 1rem;
+    }
+    #walletForm {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    #walletForm input, #walletForm button {
+        width: 100%;
+        margin: 0.5rem 0;
+    }
+    #logs {
+        background: #111;
+        color: #0f0;
+        height: 200px;
+        overflow-y: auto;
+        padding: 0.5rem;
+        font-family: monospace;
+        margin-top: 1rem;
+        border-radius: 6px;
+        width: 100%;
+    }
+    #results {
+        margin-top: 1rem;
+        width: 100%;
+    }
+    .toast {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #f44336;
+        color: white;
+        padding: 1rem 2rem;
+        border-radius: 8px;
+        display: none;
+        font-weight: bold;
+        z-index: 1100;
+        text-align: center;
+    }
+    .toast.success {
+        background: #4CAF50;
+    }
+</style>
 </head>
 <body>
 
+<div class="main-container" id="landing">
+    <h1>Wallet Gas & Balance Checker</h1>
+    <button onclick="showPopup('login')">Login</button>
+    <button onclick="showPopup('register')">Register</button>
+</div>
+
+<div class="overlay" id="overlay">
+    <div class="popup" id="popup">
+        <h2 id="popupTitle"></h2>
+        <input type="text" placeholder="Username" id="username">
+        <input type="password" placeholder="Password" id="password">
+        <button id="submitBtn"></button>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="main-container" id="walletView" style="display:none;">
+    <h2>Wallet Balance & Gas Checker</h2>
+    <form id="walletForm">
+        <input name="wallet" type="text" placeholder="Wallet address" required>
+        <input name="start_date" type="date" required>
+        <input name="end_date" type="date" required>
+        <button type="submit">Check</button>
+    </form>
+    <div id="logs"></div>
+    <div id="results"></div>
+</div>
+
+<script>
+    const overlay = document.getElementById('overlay');
+    const popupTitle = document.getElementById('popupTitle');
+    const submitBtn = document.getElementById('submitBtn');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const toast = document.getElementById('toast');
+    const landing = document.getElementById('landing');
+    const walletView = document.getElementById('walletView');
+
+    let currentAction = '';
+
+    function showPopup(action) {
+        currentAction = action;
+        popupTitle.innerText = action === 'login' ? 'Login' : 'Register';
+        submitBtn.innerText = action === 'login' ? 'Login' : 'Register';
+        overlay.style.display = 'flex';
+    }
+
+    submitBtn.onclick = async () => {
+        const username = usernameInput.value;
+        const password = passwordInput.value;
+        if (!username || !password) return;
+
+        const endpoint = currentAction === 'login' ? '/login' : '/register';
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'x-requested-with': 'XMLHttpRequest'},
+                body: JSON.stringify({username, password})
+            });
+            const data = await res.json().catch(() => ({}));
+
+            if (res.ok || data.success) {
+                overlay.style.display = 'none';
+                landing.style.display = 'none';
+                walletView.style.display = 'flex';
+                showToast('Logged in successfully', true);
+            } else {
+                showToast(data.error || 'Error', false);
+            }
+        } catch (err) {
+            showToast('Network error', false);
+        }
+    };
+
+    function showToast(message, success) {
+        toast.innerText = message;
+        toast.className = 'toast ' + (success ? 'success' : '');
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2500);
+    }
+
+    // Wallet form event
+    const form = document.getElementById('walletForm');
+    const logs = document.getElementById('logs');
+    const results = document.getElementById('results');
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        logs.innerHTML = '';
+        results.innerHTML = '';
+
+        const formData = new FormData(form);
+        const params = new URLSearchParams(formData);
+
+        const evtSource = new EventSource('/check?' + params.toString());
+
+        evtSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'log') {
+                logs.innerHTML += data.msg + '<br>';
+                logs.scrollTop = logs.scrollHeight;
+            } else if (data.type === 'result') {
+                const res = data.data;
+                results.innerHTML = `
+                    <h3>Results</h3>
+                    <p>Wallet <strong>${form.wallet.value}</strong></p>
+                    <p>From <strong>${form.start_date.value}</strong> to <strong>${form.end_date.value}</strong></p>
+                    <p><strong>Starting balance:</strong> ${res.starting_balance.eth} ETH (€${res.starting_balance.eur.toFixed(2)})</p>
+                    <p><strong>Ending balance:</strong> ${res.ending_balance.eth} ETH (€${res.ending_balance.eur.toFixed(2)})</p>
+                    <p><strong>Total gas paid:</strong> ${res.gas_fees_eth.toFixed(6)} ETH (€${res.gas_fees_eur.toFixed(2)})</p>
+                `;
+                evtSource.close();
+            }
+        }
+    });
+
+    overlay.onclick = function(e) {
+        if (e.target === overlay) {
+            overlay.style.display = 'none';
+            usernameInput.value = '';
+            passwordInput.value = '';
+        }
+    };
+
+</script>
 </body>
 </html>
