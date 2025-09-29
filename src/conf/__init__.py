@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from pydantic.v1 import BaseSettings
+from starlette.templating import Jinja2Templates
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -16,6 +17,8 @@ class Settings(BaseSettings):
     database_host: str = 'localhost'
     database_port: int = 5432
     database_name: str = ''
+
+    templates = Jinja2Templates(directory=str(BASE_DIR / 'templates'))
     
     # TODO: set session key before deploy
     SESSION_SECRET_KEY = ''

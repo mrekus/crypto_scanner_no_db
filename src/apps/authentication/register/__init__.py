@@ -1,1 +1,1 @@
-# TODO: add router
+from apps.authentication.register.views import router

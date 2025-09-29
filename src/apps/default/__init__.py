@@ -1,1 +1,1 @@
-# TODO: add router
+from apps.default.views import router
