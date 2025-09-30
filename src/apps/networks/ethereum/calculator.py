@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 from conf import cfg
+from utils.utils import load_json_file
 
 
 class WalletAnalyzer:
@@ -13,23 +14,17 @@ class WalletAnalyzer:
         self.CG_API_KEY = 'CG-kbf7rFt27G6XBe2jekbqr3zY'
         self.URL_API = f'https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}'
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
-        # self.ETH_PRICE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/history'
-        self.ETH_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/market_chart/range'
+        self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
+        self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
+
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
         headers = {'Authorization': f'Bearer {self.ALCHEMY_API_KEY}'}
         params = {'networks': 'eth-mainnet', 'timestamp': timestamp, 'direction': 'AFTER'}
         resp = await client.get(self.URL_BLOCKS, params=params, headers=headers)
         resp.raise_for_status()
-        block_number = resp.json()['data'][0]['block']['number']
 
-        return hex(block_number)
-
-    # async def get_eth_price_for_date(self, client: httpx.AsyncClient, date: str) -> float:
-    #     headers = {'x-cg-demo-api-key': self.CG_API_KEY}
-    #     resp = await client.get(self.ETH_PRICE_URL, params={'date': date, 'localization': False}, headers=headers)
-    #     resp.raise_for_status()
-    #     return resp.json()['market_data']['current_price']['usd']
+        return hex(resp.json()['data'][0]['block']['number'])
 
 
     async def get_wallet_eth_balance(self, client: httpx.AsyncClient, wallet: str, block_number: str) -> float:
@@ -39,12 +34,14 @@ class WalletAnalyzer:
 
         return int(resp.json()['result'], 16) / 1e18
 
+
     async def get_token_metadata(self, client: httpx.AsyncClient, contract_address: str) -> Dict[str, Any]:
         payload = {'jsonrpc': '2.0', 'method': 'alchemy_getTokenMetadata', 'params': [contract_address], 'id': 1}
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
 
         return resp.json().get('result', {})
+
 
     async def get_wallet_token_balances(self, client, wallet, block_number):
         payload = {
@@ -55,81 +52,78 @@ class WalletAnalyzer:
         }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
-        result = resp.json().get('result', {})
         balances = {}
-
-        for token in result.get('tokenBalances', []):
+        for token in resp.json().get('result', {}).get('tokenBalances', []):
             raw_balance = int(token['tokenBalance'], 16)
             if raw_balance == 0:
                 continue
-
             metadata = cfg.ERC20_TOKEN_METADATA.get(token['contractAddress'])
             if metadata is None:
                 metadata = await self.get_token_metadata(client, token['contractAddress'])
                 cfg.ERC20_TOKEN_METADATA[token['contractAddress']] = metadata
-
             decimals = metadata.get('decimals', 18)
             symbol = metadata.get('symbol', token['contractAddress'][:6])
             name = metadata.get('name', '')
-            human_balance = raw_balance / (10 ** decimals)
-
             balances[token['contractAddress']] = {
                 'symbol': symbol,
                 'name': name,
-                'balance': human_balance,
+                'balance': raw_balance / (10 ** decimals)
             }
 
         return balances
 
-    async def get_outgoing_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str) -> list:
-        payload = {
-            'jsonrpc': '2.0',
-            'method': 'alchemy_getAssetTransfers',
-            'params': [
-                {
-                    'fromBlock': start_block,
-                    'toBlock': end_block,
-                    'fromAddress': wallet,
-                    'category': ['external', 'erc20', 'internal'],
-                    'withMetadata': True,
-                }
-            ],
-            'id': 1,
-        }
-        resp = await client.post(self.URL_API, json=payload)
-        resp.raise_for_status()
 
-        return resp.json().get('result', {}).get('transfers', [])
-
-    async def get_incoming_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str) -> list:
-        payload = {
-            'jsonrpc': '2.0',
-            'method': 'alchemy_getAssetTransfers',
-            'params': [
-                {
-                    'fromBlock': start_block,
-                    'toBlock': end_block,
-                    'toAddress': wallet,
-                    'category': ['external', 'erc20', 'erc721', 'internal'],
-                    'withMetadata': True,
-                }
-            ],
-            'id': 1,
-        }
+    async def get_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str, direction='outgoing') -> list:
+        if direction == 'outgoing':
+            params = {'fromBlock': start_block, 'toBlock': end_block, 'fromAddress': wallet,
+                      'category': ['external', 'erc20', 'internal'], 'withMetadata': True}
+        else:
+            params = {'fromBlock': start_block, 'toBlock': end_block, 'toAddress': wallet,
+                      'category': ['external', 'erc20', 'internal'], 'withMetadata': True}
+        payload = {'jsonrpc': '2.0', 'method': 'alchemy_getAssetTransfers', 'params': [params], 'id': 1}
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
 
         return resp.json().get('result', {}).get('transfers', [])
 
     async def fetch_gas_fee(self, client: httpx.AsyncClient, tx_hash: str) -> float:
-        payload_receipt = {'jsonrpc': '2.0', 'method': 'eth_getTransactionReceipt', 'params': [tx_hash], 'id': 1}
-        resp = await client.post(self.URL_API, json=payload_receipt)
+        payload = {'jsonrpc': '2.0', 'method': 'eth_getTransactionReceipt', 'params': [tx_hash], 'id': 1}
+        resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
         receipt = resp.json()['result']
         gas_used = int(receipt['gasUsed'], 16)
         effective_gas_price = int(receipt.get('effectiveGasPrice') or receipt.get('gasPrice'), 16)
 
         return gas_used * effective_gas_price / 1e18
+
+
+    async def get_token_prices(self, client: httpx.AsyncClient, token_id: str, start_ts: int, end_ts: int) -> dict:
+        url = self.CG_PRICE_RANGE_URL.format(token_id=token_id)
+        resp = await client.get(url, params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts})
+        resp.raise_for_status()
+
+        return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
+
+    async def fetch_token_prices_in_batches(self, client, contracts, start_ts, end_ts, batch_size=10, pause=1):
+        token_price_maps = {}
+
+        async def fetch_one(contract, cg_id):
+            try:
+                token_price_maps[contract] = await self.get_token_prices(client, cg_id, start_ts, end_ts)
+            except Exception as e:
+                print(f'Failed to fetch prices for {contract}: {e}')
+                token_price_maps[contract] = None
+
+        contracts_with_id = [(c, self.contract_to_id_map.get(c)) for c in contracts]
+        contracts_with_id = [(c, cg_id) for c, cg_id in contracts_with_id if cg_id]
+
+        for i in range(0, len(contracts_with_id), batch_size):
+            batch = contracts_with_id[i:i+batch_size]
+            await asyncio.gather(*(fetch_one(c, cg_id) for c, cg_id in batch))
+            await asyncio.sleep(pause)
+
+        return token_price_maps
+
 
     async def analyze_wallet(self, wallet: str, start_date: str, end_date: str) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
@@ -145,46 +139,65 @@ class WalletAnalyzer:
             starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
             ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
 
-            transfers_outgoing = await self.get_outgoing_transfers(client, wallet, start_block, end_block)
-            transfers_incoming = await self.get_incoming_transfers(client, wallet, start_block, end_block)
+            transfers_outgoing = await self.get_transfers(client, wallet, start_block, end_block, 'outgoing')
+            transfers_incoming = await self.get_transfers(client, wallet, start_block, end_block, 'incoming')
 
             headers = {'x-cg-demo-api-key': self.CG_API_KEY}
-            price_resp = await client.get(
-                self.ETH_PRICE_RANGE_URL,
-                headers=headers,
-                params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts}
-            )
-            price_data = price_resp.json()
-            price_map = {int(ts / 1000): price for ts, price in price_data.get('prices', [])}
+            eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts})
+            eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
 
-            def map_price(ts_float):
+            tx_contracts = {tx.get('rawContract').get('address') for tx in transfers_outgoing + transfers_incoming}
+            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, start_ts, end_ts, batch_size=10, pause=1)
+
+            def map_price(price_map, ts_float):
+                if not price_map:
+                    return 'unknown'
                 ts_int = int(ts_float)
                 if ts_int in price_map:
                     return price_map[ts_int]
-                closest_ts = min(price_map.keys(), key=lambda k: abs(k - ts_int))
-                return price_map[closest_ts]
+                return price_map[min(price_map.keys(), key=lambda k: abs(k - ts_int))]
 
             tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
             gas_fees_eth = await asyncio.gather(*tasks)
             total_gas_eur = 0
             for tx, fee in zip(transfers_outgoing, gas_fees_eth):
                 ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-                price_eur = map_price(ts)
+                eth_price = map_price(eth_price_map, ts)
                 tx['gas_fee_eth'] = fee
-                tx['gas_fee_eur'] = fee * price_eur
-                total_gas_eur += tx['gas_fee_eur']
+                tx['gas_fee_eur'] = fee * eth_price if eth_price != 'unknown' else 'unknown'
+
+                contract = tx.get('rawContract').get('address')
+                token_price_map = token_price_maps.get(contract)
+                if 'tokenAmount' in tx:
+                    if token_price_map:
+                        token_price = map_price(token_price_map, ts)
+                        decimals = int(tx['tokenAmount'].get('decimals', 18))
+                        amount = float(tx['tokenAmount']['amount']) / (10 ** decimals)
+                        tx['token_price_eur'] = token_price
+                        tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
+                    else:
+                        tx['token_price_eur'] = 'unknown'
+                        tx['value_eur'] = 'unknown'
+
+                total_gas_eur += tx['gas_fee_eur'] if tx['gas_fee_eur'] != 'unknown' else 0
 
             total_gas_eth = sum(gas_fees_eth)
+
+            for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
+                for contract, token in token_map.items():
+                    token_price_map = token_price_maps.get(contract)
+                    price = map_price(token_price_map, ts) if token_price_map else 'unknown'
+                    token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
 
             return {
                 'starting_balance': {
                     'ETH': starting_eth,
-                    'ETH_eur': starting_eth * map_price(start_ts),
+                    'ETH_eur': starting_eth * map_price(eth_price_map, start_ts) if map_price(eth_price_map, start_ts) != 'unknown' else 'unknown',
                     'tokens': starting_tokens
                 },
                 'ending_balance': {
                     'ETH': ending_eth,
-                    'ETH_eur': ending_eth * map_price(end_ts),
+                    'ETH_eur': ending_eth * map_price(eth_price_map, end_ts) if map_price(eth_price_map, end_ts) != 'unknown' else 'unknown',
                     'tokens': ending_tokens
                 },
                 'transfers': {

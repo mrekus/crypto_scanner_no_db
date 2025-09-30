@@ -1,6 +1,8 @@
 import importlib
+import json
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -44,3 +46,13 @@ def require_user(request: Request, db: Session = Depends(get_db)):
         )
 
     return user
+
+
+def load_json_file(file_path: str | Path) -> Any:
+    base_path = Path(__file__).parent.parent
+    file_path = base_path / file_path
+    if not file_path.exists():
+        raise FileNotFoundError(f'JSON file not found: {file_path}')
+
+    with file_path.open('r', encoding='utf-8') as f:
+        return json.load(f)
