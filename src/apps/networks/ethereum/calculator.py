@@ -168,11 +168,10 @@ class WalletAnalyzer:
 
                 contract = tx.get('rawContract').get('address')
                 token_price_map = token_price_maps.get(contract)
-                if 'tokenAmount' in tx:
+                if 'value' in tx:
                     if token_price_map:
                         token_price = map_price(token_price_map, ts)
-                        decimals = int(tx['tokenAmount'].get('decimals', 18))
-                        amount = float(tx['tokenAmount']['amount']) / (10 ** decimals)
+                        amount = float(tx['value'])
                         tx['token_price_eur'] = token_price
                         tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
                     else:
