@@ -5,6 +5,8 @@ from typing import Optional, Dict, Any
 
 import httpx
 
+from conf import cfg
+
 
 class WalletAnalyzer:
     def __init__(self):
@@ -46,7 +48,7 @@ class WalletAnalyzer:
         resp.raise_for_status()
         return resp.json().get('result', {})
 
-    async def get_wallet_token_balances(self, client: httpx.AsyncClient, wallet: str, block_number: str) -> Dict[str, Dict]:
+    async def get_wallet_token_balances(self, client, wallet, block_number):
         payload = {
             'jsonrpc': '2.0',
             'method': 'alchemy_getTokenBalances',
@@ -62,13 +64,22 @@ class WalletAnalyzer:
             raw_balance = int(token['tokenBalance'], 16)
             if raw_balance == 0:
                 continue
-            metadata = await self.get_token_metadata(client, token['contractAddress'])
+
+            metadata = cfg.ERC20_TOKEN_METADATA.get(token['contractAddress'])
+            if metadata is None:
+                metadata = await self.get_token_metadata(client, token['contractAddress'])
+                cfg.ERC20_TOKEN_METADATA[token['contractAddress']] = metadata
+
             decimals = metadata.get('decimals', 18)
             symbol = metadata.get('symbol', token['contractAddress'][:6])
-            name = metadata.get('name', "")
+            name = metadata.get('name', '')
             human_balance = raw_balance / (10 ** decimals)
-            balances[token['contractAddress']] = {'symbol': symbol, 'name': name, 'balance': human_balance}
 
+            balances[token['contractAddress']] = {
+                'symbol': symbol,
+                'name': name,
+                'balance': human_balance,
+            }
         return balances
 
     async def get_outgoing_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str) -> list:
