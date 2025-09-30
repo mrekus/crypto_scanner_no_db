@@ -1,9 +1,8 @@
-import json
 import asyncio
-from datetime import datetime
-from typing import Optional, Dict, Any
-
+import json
 import httpx
+from datetime import datetime
+from typing import Dict, Any
 
 from conf import cfg
 
@@ -14,13 +13,8 @@ class WalletAnalyzer:
         self.CG_API_KEY = 'CG-kbf7rFt27G6XBe2jekbqr3zY'
         self.URL_API = f'https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}'
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
-        self.ETH_PRICE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/history'
+        # self.ETH_PRICE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/history'
         self.ETH_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/ethereum/market_chart/range'
-
-    @staticmethod
-    def _iso_date(year: int, month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> str:
-        dt = datetime(year, month, day, hour, minute, second)
-        return dt.isoformat() + 'Z'
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
         headers = {'Authorization': f'Bearer {self.ALCHEMY_API_KEY}'}
@@ -28,24 +22,28 @@ class WalletAnalyzer:
         resp = await client.get(self.URL_BLOCKS, params=params, headers=headers)
         resp.raise_for_status()
         block_number = resp.json()['data'][0]['block']['number']
+
         return hex(block_number)
 
-    async def get_eth_price_for_date(self, client: httpx.AsyncClient, date: str) -> float:
-        headers = {'x-cg-demo-api-key': self.CG_API_KEY}
-        resp = await client.get(self.ETH_PRICE_URL, params={'date': date, 'localization': False}, headers=headers)
-        resp.raise_for_status()
-        return resp.json()['market_data']['current_price']['usd']
+    # async def get_eth_price_for_date(self, client: httpx.AsyncClient, date: str) -> float:
+    #     headers = {'x-cg-demo-api-key': self.CG_API_KEY}
+    #     resp = await client.get(self.ETH_PRICE_URL, params={'date': date, 'localization': False}, headers=headers)
+    #     resp.raise_for_status()
+    #     return resp.json()['market_data']['current_price']['usd']
+
 
     async def get_wallet_eth_balance(self, client: httpx.AsyncClient, wallet: str, block_number: str) -> float:
         payload = {'jsonrpc': '2.0', 'method': 'eth_getBalance', 'params': [wallet, block_number], 'id': 1}
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
+
         return int(resp.json()['result'], 16) / 1e18
 
     async def get_token_metadata(self, client: httpx.AsyncClient, contract_address: str) -> Dict[str, Any]:
         payload = {'jsonrpc': '2.0', 'method': 'alchemy_getTokenMetadata', 'params': [contract_address], 'id': 1}
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
+
         return resp.json().get('result', {})
 
     async def get_wallet_token_balances(self, client, wallet, block_number):
@@ -80,6 +78,7 @@ class WalletAnalyzer:
                 'name': name,
                 'balance': human_balance,
             }
+
         return balances
 
     async def get_outgoing_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str) -> list:
@@ -99,6 +98,7 @@ class WalletAnalyzer:
         }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
+
         return resp.json().get('result', {}).get('transfers', [])
 
     async def get_incoming_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str) -> list:
@@ -118,6 +118,7 @@ class WalletAnalyzer:
         }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
+
         return resp.json().get('result', {}).get('transfers', [])
 
     async def fetch_gas_fee(self, client: httpx.AsyncClient, tx_hash: str) -> float:
@@ -127,6 +128,7 @@ class WalletAnalyzer:
         receipt = resp.json()['result']
         gas_used = int(receipt['gasUsed'], 16)
         effective_gas_price = int(receipt.get('effectiveGasPrice') or receipt.get('gasPrice'), 16)
+
         return gas_used * effective_gas_price / 1e18
 
     async def analyze_wallet(self, wallet: str, start_date: str, end_date: str) -> Dict[str, Any]:
@@ -167,9 +169,9 @@ class WalletAnalyzer:
             total_gas_eur = 0
             for tx, fee in zip(transfers_outgoing, gas_fees_eth):
                 ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-                price_usd = map_price(ts)
+                price_eur = map_price(ts)
                 tx['gas_fee_eth'] = fee
-                tx['gas_fee_eur'] = fee * price_usd
+                tx['gas_fee_eur'] = fee * price_eur
                 total_gas_eur += tx['gas_fee_eur']
 
             total_gas_eth = sum(gas_fees_eth)
