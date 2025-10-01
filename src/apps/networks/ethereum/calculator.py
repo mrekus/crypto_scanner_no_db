@@ -104,6 +104,7 @@ class WalletAnalyzer:
 
         return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
 
+
     async def fetch_token_prices_in_batches(self, client, contracts, start_ts, end_ts, batch_size=10, pause=1):
         token_price_maps = {}
 
@@ -191,12 +192,12 @@ class WalletAnalyzer:
             return {
                 'starting_balance': {
                     'ETH': starting_eth,
-                    'ETH_eur': starting_eth * map_price(eth_price_map, start_ts) if map_price(eth_price_map, start_ts) != 'unknown' else 'unknown',
+                    'ETH_eur': starting_eth * map_price(eth_price_map, start_ts),
                     'tokens': starting_tokens
                 },
                 'ending_balance': {
                     'ETH': ending_eth,
-                    'ETH_eur': ending_eth * map_price(eth_price_map, end_ts) if map_price(eth_price_map, end_ts) != 'unknown' else 'unknown',
+                    'ETH_eur': ending_eth * map_price(eth_price_map, end_ts),
                     'tokens': ending_tokens
                 },
                 'transfers': {
