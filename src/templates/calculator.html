@@ -77,15 +77,16 @@ button:hover{background:var(--accent-hover);}
     max-width:500px;
 }
 
-.results .transactions{
-    max-height:300px;
-    overflow-y:auto;
-    background:#111;
-    color:#0f0;
-    font-family:monospace;
-    padding:12px;
-    border-radius:12px;
-    white-space:pre-wrap;
+.results .transactions {
+    max-height: 500px;   /* bigger */
+    width: 100%;
+    overflow-y: auto;
+    background: #111;
+    color: #0f0;
+    font-family: monospace;
+    padding: 12px;
+    border-radius: 12px;
+    white-space: pre-wrap;
 }
 .toast{
     position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 20px;border-radius:12px;color:#fff;font-weight:700;display:none;z-index:1300;
@@ -154,9 +155,18 @@ form.addEventListener('submit', async (e)=>{
                 transactionsEl.scrollTop = transactionsEl.scrollHeight;
             } else if(data.type==='result'){
                 const res = data.data;
-                startBalanceEl.textContent = `${res.starting_balance.eth} ETH (€${res.starting_balance.eur.toFixed(2)})`;
-                endBalanceEl.textContent = `${res.ending_balance.eth} ETH (€${res.ending_balance.eur.toFixed(2)})`;
 
+                // starting balance
+                const startEth = res.starting_balance.eth ?? 0;
+                const startEur = res.starting_balance.eur ?? 0;
+                startBalanceEl.textContent = `${startEth} ETH (€${Number(startEur).toFixed(2)})`;
+
+                // ending balance
+                const endEth = res.ending_balance.eth ?? 0;
+                const endEur = res.ending_balance.eur ?? 0;
+                endBalanceEl.textContent = `${endEth} ETH (€${Number(endEur).toFixed(2)})`;
+
+                // transactions
                 if(res.transactions && res.transactions.length){
                     transactionsEl.textContent = JSON.stringify(res.transactions,null,2);
                 } else {

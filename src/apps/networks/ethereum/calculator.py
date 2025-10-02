@@ -16,6 +16,7 @@ class WalletAnalyzer:
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
         self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
         self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
+        # self.semaphore = asyncio.Semaphore(5)
 
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
@@ -126,7 +127,7 @@ class WalletAnalyzer:
         return token_price_maps
 
 
-    async def analyze_wallet(self, wallet: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    async def run(self, wallet: str, start_date: str, end_date: str) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
             end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
@@ -209,7 +210,7 @@ class WalletAnalyzer:
             }
 
 
-WALLET = '0xe742B245cd5A8874aB71c5C004b5B9F877EDf0c0'
-analyzer = WalletAnalyzer()
-result = asyncio.run(analyzer.analyze_wallet(WALLET, '2025-08-29', '2025-09-29'))
-print(json.dumps(result, indent=2))
+# WALLET = '0xe742B245cd5A8874aB71c5C004b5B9F877EDf0c0'
+# analyzer = WalletAnalyzer()
+# result = asyncio.run(analyzer.run(WALLET, '2025-08-29', '2025-09-29'))
+# print(json.dumps(result, indent=2))

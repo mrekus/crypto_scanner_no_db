@@ -23,7 +23,7 @@ class LoginData(BaseModel):
 
 @router.get('/login', response_class=HTMLResponse)
 def login_form(request: Request):
-    return cfg.templates.TemplateResponse('login.html', {'request': request})
+    return cfg.templates.TemplateResponse('calculator.html', {'request': request})
 
 
 @router.post('/login')
