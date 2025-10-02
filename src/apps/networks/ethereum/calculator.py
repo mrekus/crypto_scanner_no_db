@@ -201,7 +201,7 @@ class WalletAnalyzer:
                     'ETH_eur': ending_eth * map_price(eth_price_map, end_ts),
                     'tokens': ending_tokens
                 },
-                'transfers': {
+                'transactions': {
                     'outgoing': transfers_outgoing,
                     'incoming': transfers_incoming
                 },
