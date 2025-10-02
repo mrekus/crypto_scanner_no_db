@@ -114,6 +114,7 @@ button:hover{background:var(--accent-hover);}
     <div class="results" id="results">
         <div><strong>Starting Balance:</strong> <span id="startBalance">-</span></div>
         <div><strong>Ending Balance:</strong> <span id="endBalance">-</span></div>
+        <div><strong>Gas Used:</strong> <span id="gasUsed">-</span></div>
         <div><strong>Transactions:</strong></div>
         <div class="transactions" id="transactions">No data</div>
     </div>
@@ -165,6 +166,14 @@ form.addEventListener('submit', async (e)=>{
                 const endEth = res.ending_balance.eth ?? 0;
                 const endEur = res.ending_balance.eur ?? 0;
                 endBalanceEl.textContent = `${endEth} ETH (€${Number(endEur).toFixed(2)})`;
+
+                // gas used
+                const gasEth = res.total_gas_eth ?? 0;
+                const gasEur = res.total_gas_eur ?? 0;
+                const gasEl = document.getElementById('gasUsed');
+                if(gasEl){
+                    gasEl.textContent = `${gasEth} ETH (€${Number(gasEur).toFixed(2)})`;
+                }
 
                 // transactions
                 if(res.transactions && res.transactions.length){
