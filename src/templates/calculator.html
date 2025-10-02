@@ -113,8 +113,13 @@ button:hover{background:var(--accent-hover);}
 
     <div class="results" id="results">
         <div><strong>Starting Balance:</strong> <span id="startBalance">-</span></div>
+        <div><strong>Starting Tokens:</strong> <span id="startTokens">-</span></div>
+
         <div><strong>Ending Balance:</strong> <span id="endBalance">-</span></div>
+        <div><strong>Ending Tokens:</strong> <span id="endTokens">-</span></div>
+
         <div><strong>Gas Used:</strong> <span id="gasUsed">-</span></div>
+
         <div><strong>Transactions:</strong></div>
         <div class="transactions" id="transactions">No data</div>
     </div>
@@ -127,6 +132,8 @@ const form = document.getElementById('walletForm');
 const startBalanceEl = document.getElementById('startBalance');
 const endBalanceEl = document.getElementById('endBalance');
 const transactionsEl = document.getElementById('transactions');
+const startTokensEl = document.getElementById('startTokens');
+const endTokensEl = document.getElementById('endTokens');
 const toastEl = document.getElementById('toast');
 
 function showToast(msg,type='error',ms=2500){
@@ -141,6 +148,8 @@ form.addEventListener('submit', async (e)=>{
     startBalanceEl.textContent='Loading...';
     endBalanceEl.textContent='Loading...';
     transactionsEl.textContent='Loading...';
+    startTokensEl.textContent='Loading...';
+    endTokensEl.textContent='Loading...'
 
     const formData = new FormData(form);
     const params = new URLSearchParams(formData);
@@ -174,6 +183,18 @@ form.addEventListener('submit', async (e)=>{
                 if(gasEl){
                     gasEl.textContent = `${gasEth} ETH (€${Number(gasEur).toFixed(2)})`;
                 }
+
+                // starting tokens
+                const startTokens = res.starting_balance.tokens ?? {};
+                startTokensEl.textContent = Object.values(startTokens)
+                    .map(t => `${t.symbol}: ${t.balance} (${t.value_eur})`)
+                    .join(', ');
+
+                // ending tokens
+                const endTokens = res.ending_balance.tokens ?? {};
+                endTokensEl.textContent = Object.values(endTokens)
+                    .map(t => `${t.symbol}: ${t.balance} (${t.value_eur})`)
+                    .join(', ');
 
                 // transactions
                 if(res.transactions && res.transactions.length){

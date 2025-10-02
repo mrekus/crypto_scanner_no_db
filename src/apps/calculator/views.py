@@ -28,10 +28,12 @@ async def check(wallet: str, start_date: str, end_date: str, user: User = Depend
                 "starting_balance": {
                     "eth": result["starting_balance"]["ETH"],
                     "eur": result["starting_balance"]["ETH_eur"],
+                    "tokens": result["starting_balance"]["tokens"],
                 },
                 "ending_balance": {
                     "eth": result["ending_balance"]["ETH"],
                     "eur": result["ending_balance"]["ETH_eur"],
+                    "tokens": result["ending_balance"]["tokens"],
                 },
                 "total_gas_eth": result["total_gas_eth"],
                 "total_gas_eur": result["total_gas_eur"],
