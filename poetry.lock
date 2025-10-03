@@ -109,6 +109,18 @@ cffi = [
 ]
 
 [[package]]
+name = "async-lru"
+version = "2.0.5"
+description = "Simple LRU cache for asyncio"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "async_lru-2.0.5-py3-none-any.whl", hash = "sha256:ab95404d8d2605310d345932697371a5f40def0487c03d6d0ad9138de52c9943"},
+    {file = "async_lru-2.0.5.tar.gz", hash = "sha256:481d52ccdd27275f42c43a928b4a50c3bfb2d67af4e78b170e3e0bb39c66e5bb"},
+]
+
+[[package]]
 name = "cffi"
 version = "2.0.0"
 description = "Foreign Function Interface for Python calling C code."
@@ -832,4 +844,4 @@ standard = ["colorama (>=0.4) ; sys_platform == \"win32\"", "httptools (>=0.6.3)
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13"
-content-hash = "1b7454dbe0eaea3af1c734ce7b33f597526f6855b5f4718d77689ac2b74a940c"
+content-hash = "7b20753d43ad0495ae03b13257ade10d8aea1490192508d5133c000e27bbec0e"

@@ -1,5 +1,6 @@
 import asyncio
-import json
+from async_lru import alru_cache
+
 import httpx
 from datetime import datetime
 from typing import Dict, Any
@@ -16,7 +17,8 @@ class WalletAnalyzer:
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
         self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
         self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
-        # self.semaphore = asyncio.Semaphore(5)
+
+        self.semaphore = asyncio.Semaphore(3)
 
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
@@ -87,6 +89,7 @@ class WalletAnalyzer:
 
         return resp.json().get('result', {}).get('transfers', [])
 
+
     async def fetch_gas_fee(self, client: httpx.AsyncClient, tx_hash: str) -> float:
         payload = {'jsonrpc': '2.0', 'method': 'eth_getTransactionReceipt', 'params': [tx_hash], 'id': 1}
         resp = await client.post(self.URL_API, json=payload)
@@ -98,30 +101,58 @@ class WalletAnalyzer:
         return gas_used * effective_gas_price / 1e18
 
 
-    async def get_token_prices(self, client: httpx.AsyncClient, token_id: str, start_ts: int, end_ts: int) -> dict:
+    @alru_cache(maxsize=512)
+    async def _fetch_prices_cached(self, token_id: str, start_ts: int, end_ts: int):
+        return token_id, start_ts, end_ts  # placeholder, real fetch delegated
+
+
+    async def get_token_prices(self, client: httpx.AsyncClient, token_id: str, start_ts: int, end_ts: int, headers=None):
+        if not token_id:
+            return None
+
+        await self._fetch_prices_cached(token_id, start_ts, end_ts)
+
         url = self.CG_PRICE_RANGE_URL.format(token_id=token_id)
-        resp = await client.get(url, params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts})
-        resp.raise_for_status()
+        params = {'vs_currency': 'eur', 'from': start_ts, 'to': end_ts}
+        try:
+            resp = await client.get(url, params=params, headers=headers, timeout=30)
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
+        except Exception:
+            return None
 
-        return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
 
-
-    async def fetch_token_prices_in_batches(self, client, contracts, start_ts, end_ts, batch_size=10, pause=1):
+    async def fetch_token_prices_in_batches(
+        self,
+        client: httpx.AsyncClient,
+        contracts,
+        start_ts,
+        end_ts,
+        batch_size=3,
+        pause=1.0,
+        headers: dict = None
+    ):
         token_price_maps = {}
 
+        valid_contracts = [
+            (c.lower(), self.contract_to_id_map.get(c.lower()))
+            for c in contracts if c and self.contract_to_id_map.get(c.lower())
+        ]
+
         async def fetch_one(contract, cg_id):
-            try:
-                token_price_maps[contract] = await self.get_token_prices(client, cg_id, start_ts, end_ts)
-            except Exception as e:
-                print(f'Failed to fetch prices for {contract}: {e}')
-                token_price_maps[contract] = None
+            async with self.semaphore:
+                try:
+                    return contract, await self.get_token_prices(client, cg_id, start_ts, end_ts, headers=headers)
+                except Exception as e:
+                    print(f'Failed to fetch {contract}: {e}')
+                    return contract, None
 
-        contracts_with_id = [(c, self.contract_to_id_map.get(c)) for c in contracts]
-        contracts_with_id = [(c, cg_id) for c, cg_id in contracts_with_id if cg_id]
-
-        for i in range(0, len(contracts_with_id), batch_size):
-            batch = contracts_with_id[i:i+batch_size]
-            await asyncio.gather(*(fetch_one(c, cg_id) for c, cg_id in batch))
+        for i in range(0, len(valid_contracts), batch_size):
+            batch = valid_contracts[i:i + batch_size]
+            results = await asyncio.gather(*(fetch_one(c, cg_id) for c, cg_id in batch))
+            token_price_maps.update(dict(results))
             await asyncio.sleep(pause)
 
         return token_price_maps
@@ -148,8 +179,13 @@ class WalletAnalyzer:
             eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts})
             eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
 
-            tx_contracts = {tx.get('rawContract').get('address') for tx in transfers_outgoing + transfers_incoming}
-            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, start_ts, end_ts, batch_size=10, pause=1)
+            tx_contracts = {
+                (tx.get('rawContract') or {}).get('address')
+                for tx in (transfers_outgoing + transfers_incoming)
+                if (tx.get('rawContract') or {}).get('address')
+            }
+            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, start_ts, end_ts,
+                                                                        batch_size=3, pause=1.0, headers=headers)
 
             def map_price(price_map, ts_float):
                 if not price_map:
@@ -212,5 +248,5 @@ class WalletAnalyzer:
 
 # WALLET = '0xe742B245cd5A8874aB71c5C004b5B9F877EDf0c0'
 # analyzer = WalletAnalyzer()
-# result = asyncio.run(analyzer.run(WALLET, '2025-08-29', '2025-09-29'))
+# result = asyncio.run(analyzer.run(WALLET, '2025-02-01', '2025-09-30'))
 # print(json.dumps(result, indent=2))

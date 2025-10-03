@@ -9,13 +9,13 @@ from utils.utils import require_user
 
 router = APIRouter()
 
-@router.get("/calculator")
+@router.get('/calculator')
 async def calculator_page(request: Request, user: User = Depends(require_user)):
     if isinstance(user, HTMLResponse):
         return user
-    return cfg.templates.TemplateResponse("calculator.html", {"request": request})
+    return cfg.templates.TemplateResponse('calculator.html', {'request': request})
 
-@router.get("/check")
+@router.get('/check')
 async def check(wallet: str, start_date: str, end_date: str, user: User = Depends(require_user)):
     if isinstance(user, HTMLResponse):
         return user
@@ -25,22 +25,22 @@ async def check(wallet: str, start_date: str, end_date: str, user: User = Depend
         try:
             result = await analyzer.run(wallet, start_date, end_date)
             payload = {
-                "starting_balance": {
-                    "eth": result["starting_balance"]["ETH"],
-                    "eur": result["starting_balance"]["ETH_eur"],
-                    "tokens": result["starting_balance"]["tokens"],
+                'starting_balance': {
+                    'eth': result['starting_balance']['ETH'],
+                    'eur': result['starting_balance']['ETH_eur'],
+                    'tokens': result['starting_balance']['tokens'],
                 },
-                "ending_balance": {
-                    "eth": result["ending_balance"]["ETH"],
-                    "eur": result["ending_balance"]["ETH_eur"],
-                    "tokens": result["ending_balance"]["tokens"],
+                'ending_balance': {
+                    'eth': result['ending_balance']['ETH'],
+                    'eur': result['ending_balance']['ETH_eur'],
+                    'tokens': result['ending_balance']['tokens'],
                 },
-                "total_gas_eth": result["total_gas_eth"],
-                "total_gas_eur": result["total_gas_eur"],
-                "transactions": result["transactions"]["outgoing"] + result["transactions"]["incoming"],
+                'total_gas_eth': result['total_gas_eth'],
+                'total_gas_eur': result['total_gas_eur'],
+                'transactions': result['transactions']['outgoing'] + result['transactions']['incoming'],
             }
-            yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
+            yield f'data: {json.dumps({'type': 'result', 'data': payload})}\n\n'
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n"
+            yield f'data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n'
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(event_generator(), media_type='text/event-stream')
