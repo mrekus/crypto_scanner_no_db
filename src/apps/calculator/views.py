@@ -37,7 +37,8 @@ async def check(wallet: str, start_date: str, end_date: str, user: User = Depend
                 },
                 'total_gas_eth': result['total_gas_eth'],
                 'total_gas_eur': result['total_gas_eur'],
-                'transactions': result['transactions']['outgoing'] + result['transactions']['incoming'],
+                'outgoing': result['transactions']['outgoing'],
+                'incoming': result['transactions']['incoming'],
             }
             yield f'data: {json.dumps({'type': 'result', 'data': payload})}\n\n'
         except Exception as e:
