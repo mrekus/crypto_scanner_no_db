@@ -151,10 +151,10 @@ button:hover{background:var(--accent-hover);}
         <div><strong>Events / Logs:</strong></div>
         <div class="transactions" id="eventsLog">No events</div>
 
-        <div><strong>Outgoing Transactions:</strong></div>
+        <div><strong id="outgoingHeader">Outgoing Transactions:</strong></div>
         <div class="transactions" id="transactionsOutgoing">No data</div>
 
-        <div><strong>Incoming Transactions:</strong></div>
+        <div><strong id="incomingHeader">Incoming Transactions:</strong></div>
         <div class="transactions" id="transactionsIncoming">No data</div>
     </div>
 </div>
@@ -171,6 +171,8 @@ const transactionsOutgoingEl = document.getElementById('transactionsOutgoing');
 const transactionsIncomingEl = document.getElementById('transactionsIncoming');
 const tokensTableBody = document.getElementById('tokensTable').querySelector('tbody');
 const toastEl = document.getElementById('toast');
+const outgoingHeader = document.getElementById('outgoingHeader');
+const incomingHeader = document.getElementById('incomingHeader');
 
 function showToast(msg,type='error',ms=2500){
     toastEl.textContent=msg;
@@ -243,6 +245,12 @@ form.addEventListener('submit', async (e)=>{
 
                     const startTokens = res.starting_balance?.tokens ?? {};
                     const endTokens = res.ending_balance?.tokens ?? {};
+
+                    const outgoingCount = Array.isArray(res.outgoing) ? res.outgoing.length : 0;
+                    const incomingCount = Array.isArray(res.incoming) ? res.incoming.length : 0;
+
+                    outgoingHeader.textContent = `Outgoing Transactions (${outgoingCount})`;
+                    incomingHeader.textContent = `Incoming Transactions (${incomingCount})`;
 
                     const allContracts = [...new Set([...Object.keys(startTokens), ...Object.keys(endTokens)])];
 
