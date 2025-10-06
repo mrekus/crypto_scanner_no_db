@@ -43,7 +43,7 @@ form{
     max-width:1000px;
     align-items:stretch;
 }
-input[type="text"], input[type="date"]{
+input[type="text"], input[type="date"], select{
     padding:16px;
     border-radius:12px;
     border:1px solid #ccc;
@@ -124,6 +124,20 @@ button:hover{background:var(--accent-hover);}
         </label>
         <label>
             <input type="date" name="end_date" required />
+        </label>
+        <label>
+            <select name="timezone" required>
+                <option value="">Select Timezone</option>
+                <option value="UTC">UTC</option>
+                <option value="Europe/Vilnius">Europe/Vilnius</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="Asia/Singapore">Asia/Singapore</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+            </select>
         </label>
         <button type="submit">Check Wallet</button>
     </form>
@@ -210,6 +224,12 @@ function computeDelta(a,b){
     const bNum = parseFloat(b)||0;
     return bNum - aNum;
 }
+
+// prevent selecting today or future dates
+const today = new Date();
+today.setDate(today.getDate() - 1);
+const maxDate = today.toISOString().split('T')[0];
+document.querySelectorAll('input[type="date"]').forEach(el => el.max = maxDate);
 
 form.addEventListener('submit', async (e)=>{
     e.preventDefault();

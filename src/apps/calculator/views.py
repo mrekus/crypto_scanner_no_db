@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse, HTMLResponse
-import asyncio, json
+import json
 
 from apps.networks.ethereum.calculator import WalletAnalyzer
 from conf import cfg
@@ -15,15 +15,16 @@ async def calculator_page(request: Request, user: User = Depends(require_user)):
         return user
     return cfg.templates.TemplateResponse('calculator.html', {'request': request})
 
+
 @router.get('/check')
-async def check(wallet: str, start_date: str, end_date: str, user: User = Depends(require_user)):
+async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', user: User = Depends(require_user)):
     if isinstance(user, HTMLResponse):
         return user
 
     async def event_generator():
         analyzer = WalletAnalyzer()
         try:
-            result = await analyzer.run(wallet, start_date, end_date)
+            result = await analyzer.run(wallet, start_date, end_date, timezone)
             payload = {
                 'starting_balance': {
                     'eth': result['starting_balance']['ETH'],
@@ -40,8 +41,8 @@ async def check(wallet: str, start_date: str, end_date: str, user: User = Depend
                 'outgoing': result['transactions']['outgoing'],
                 'incoming': result['transactions']['incoming'],
             }
-            yield f'data: {json.dumps({'type': 'result', 'data': payload})}\n\n'
+            yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
         except Exception as e:
-            yield f'data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n'
+            yield f"data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n"
 
     return StreamingResponse(event_generator(), media_type='text/event-stream')

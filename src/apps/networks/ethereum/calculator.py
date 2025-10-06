@@ -2,7 +2,8 @@ import asyncio
 from async_lru import alru_cache
 
 import httpx
-from datetime import datetime
+from zoneinfo import ZoneInfo
+from datetime import datetime, timedelta
 from typing import Dict, Any
 
 from conf import cfg
@@ -157,11 +158,15 @@ class WalletAnalyzer:
 
         return token_price_maps
 
-
-    async def run(self, wallet: str, start_date: str, end_date: str) -> Dict[str, Any]:
+    async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC') -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
-            start_ts = int(datetime.strptime(start_date, '%Y-%m-%d').timestamp())
-            end_ts = int(datetime.strptime(end_date, '%Y-%m-%d').timestamp())
+            tz = ZoneInfo(timezone)
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
+                hour=0, minute=0, second=0).replace(tzinfo=tz)
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(
+                hour=0, minute=0, second=0).replace(tzinfo=tz) + timedelta(days=1)
+            start_ts = int(start_dt.timestamp())
+            end_ts = int(end_dt.timestamp())
 
             start_block = await self.get_block_by_timestamp(client, start_ts)
             end_block = await self.get_block_by_timestamp(client, end_ts)
