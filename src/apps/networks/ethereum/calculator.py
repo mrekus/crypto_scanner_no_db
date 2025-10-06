@@ -158,6 +158,15 @@ class WalletAnalyzer:
 
         return token_price_maps
 
+    @staticmethod
+    def map_price(price_map, ts_float):
+        if not price_map:
+            return 'unknown'
+        ts_int = int(ts_float)
+        if ts_int in price_map:
+            return price_map[ts_int]
+        return price_map[min(price_map.keys(), key=lambda k: abs(k - ts_int))]
+
     async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC') -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             tz = ZoneInfo(timezone)
@@ -191,21 +200,12 @@ class WalletAnalyzer:
             }
             token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, start_ts, end_ts,
                                                                         batch_size=3, pause=1.0, headers=headers)
-
-            def map_price(price_map, ts_float):
-                if not price_map:
-                    return 'unknown'
-                ts_int = int(ts_float)
-                if ts_int in price_map:
-                    return price_map[ts_int]
-                return price_map[min(price_map.keys(), key=lambda k: abs(k - ts_int))]
-
             tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
             gas_fees_eth = await asyncio.gather(*tasks)
             total_gas_eur = 0
             for tx, fee in zip(transfers_outgoing, gas_fees_eth):
                 ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-                eth_price = map_price(eth_price_map, ts)
+                eth_price = self.map_price(eth_price_map, ts)
                 tx['gas_fee_eth'] = fee
                 tx['gas_fee_eur'] = fee * eth_price if eth_price != 'unknown' else 'unknown'
 
@@ -214,12 +214,12 @@ class WalletAnalyzer:
                 if 'value' in tx:
                     amount = float(tx['value'])
                     if tx.get('asset') == 'ETH':
-                        eth_price = map_price(eth_price_map, ts)
+                        eth_price = self.map_price(eth_price_map, ts)
                         tx['token_price_eur'] = eth_price
                         tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
                     else:
                         if token_price_map:
-                            token_price = map_price(token_price_map, ts)
+                            token_price = self.map_price(token_price_map, ts)
                             tx['token_price_eur'] = token_price
                             tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
                         else:
@@ -239,12 +239,12 @@ class WalletAnalyzer:
                 if 'value' in tx:
                     amount = float(tx['value'])
                     if tx.get('asset') == 'ETH':
-                        eth_price = map_price(eth_price_map, ts)
+                        eth_price = self.map_price(eth_price_map, ts)
                         tx['token_price_eur'] = eth_price
                         tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
                     else:
                         if token_price_map:
-                            token_price = map_price(token_price_map, ts)
+                            token_price = self.map_price(token_price_map, ts)
                             tx['token_price_eur'] = token_price
                             tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
                         else:
@@ -254,18 +254,18 @@ class WalletAnalyzer:
             for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
                 for contract, token in token_map.items():
                     token_price_map = token_price_maps.get(contract)
-                    price = map_price(token_price_map, ts) if token_price_map else 'unknown'
+                    price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
                     token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
 
             return {
                 'starting_balance': {
                     'ETH': starting_eth,
-                    'ETH_eur': starting_eth * map_price(eth_price_map, start_ts),
+                    'ETH_eur': starting_eth * self.map_price(eth_price_map, start_ts),
                     'tokens': starting_tokens
                 },
                 'ending_balance': {
                     'ETH': ending_eth,
-                    'ETH_eur': ending_eth * map_price(eth_price_map, end_ts),
+                    'ETH_eur': ending_eth * self.map_price(eth_price_map, end_ts),
                     'tokens': ending_tokens
                 },
                 'transactions': {
