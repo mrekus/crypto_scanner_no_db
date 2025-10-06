@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 
