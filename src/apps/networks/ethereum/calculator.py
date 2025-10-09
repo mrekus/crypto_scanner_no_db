@@ -26,7 +26,11 @@ class WalletAnalyzer:
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
         headers = {'Authorization': f'Bearer {self.ALCHEMY_API_KEY}'}
-        params = {'networks': 'eth-mainnet', 'timestamp': timestamp, 'direction': 'AFTER'}
+        params = {
+            'networks': 'eth-mainnet',
+            'timestamp': timestamp,
+            'direction': 'AFTER'
+        }
         resp = await client.get(self.URL_BLOCKS, params=params, headers=headers)
         resp.raise_for_status()
 
@@ -34,7 +38,12 @@ class WalletAnalyzer:
 
 
     async def get_wallet_eth_balance(self, client: httpx.AsyncClient, wallet: str, block_number: str) -> float:
-        payload = {'jsonrpc': '2.0', 'method': 'eth_getBalance', 'params': [wallet, block_number], 'id': 1}
+        payload = {
+            'jsonrpc': '2.0',
+            'method': 'eth_getBalance',
+            'params': [wallet, block_number],
+            'id': 1
+        }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
 
@@ -42,7 +51,12 @@ class WalletAnalyzer:
 
 
     async def get_token_metadata(self, client: httpx.AsyncClient, contract_address: str) -> Dict[str, Any]:
-        payload = {'jsonrpc': '2.0', 'method': 'alchemy_getTokenMetadata', 'params': [contract_address], 'id': 1}
+        payload = {
+            'jsonrpc': '2.0',
+            'method': 'alchemy_getTokenMetadata',
+            'params': [contract_address],
+            'id': 1,
+        }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
 
@@ -75,7 +89,7 @@ class WalletAnalyzer:
             balances[token['contractAddress']] = {
                 'symbol': symbol,
                 'name': name,
-                'balance': raw_balance / (10 ** decimals)
+                'balance': raw_balance / (10 ** decimals),
             }
 
         return balances
@@ -83,12 +97,27 @@ class WalletAnalyzer:
 
     async def get_transfers(self, client: httpx.AsyncClient, wallet: str, start_block: str, end_block: str, direction='outgoing') -> list:
         if direction == 'outgoing':
-            params = {'fromBlock': start_block, 'toBlock': end_block, 'fromAddress': wallet,
-                      'category': ['external', 'erc20', 'internal'], 'withMetadata': True}
+            params = {
+                'fromBlock': start_block,
+                'toBlock': end_block,
+                'fromAddress': wallet,
+                'category': ['external', 'erc20', 'internal'],
+                'withMetadata': True,
+            }
         else:
-            params = {'fromBlock': start_block, 'toBlock': end_block, 'toAddress': wallet,
-                      'category': ['external', 'erc20', 'internal'], 'withMetadata': True}
-        payload = {'jsonrpc': '2.0', 'method': 'alchemy_getAssetTransfers', 'params': [params], 'id': 1}
+            params = {
+                'fromBlock': start_block,
+                'toBlock': end_block,
+                'toAddress': wallet,
+                'category': ['external', 'erc20', 'internal'],
+                'withMetadata': True,
+            }
+        payload = {
+            'jsonrpc': '2.0',
+            'method': 'alchemy_getAssetTransfers',
+            'params': [params],
+            'id': 1,
+        }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
 
@@ -96,7 +125,12 @@ class WalletAnalyzer:
 
 
     async def fetch_gas_fee(self, client: httpx.AsyncClient, tx_hash: str) -> float:
-        payload = {'jsonrpc': '2.0', 'method': 'eth_getTransactionReceipt', 'params': [tx_hash], 'id': 1}
+        payload = {
+            'jsonrpc': '2.0',
+            'method': 'eth_getTransactionReceipt',
+            'params': [tx_hash],
+            'id': 1,
+        }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
         receipt = resp.json()['result']
@@ -118,7 +152,11 @@ class WalletAnalyzer:
         await self._fetch_prices_cached(token_id, start_ts, end_ts)
 
         url = self.CG_PRICE_RANGE_URL.format(token_id=token_id)
-        params = {'vs_currency': 'eur', 'from': start_ts, 'to': end_ts}
+        params = {
+            'vs_currency': 'eur',
+            'from': start_ts,
+            'to': end_ts,
+        }
 
         try:
             resp = await client.get(url, params=params, headers=headers, timeout=30)
