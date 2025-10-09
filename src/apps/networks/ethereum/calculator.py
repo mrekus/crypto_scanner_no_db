@@ -1,4 +1,6 @@
 import asyncio
+import json
+
 from async_lru import alru_cache
 
 import httpx
@@ -59,8 +61,10 @@ class WalletAnalyzer:
         balances = {}
         for token in resp.json().get('result', {}).get('tokenBalances', []):
             raw_balance = int(token['tokenBalance'], 16)
+
             if raw_balance == 0:
                 continue
+
             metadata = cfg.ERC20_TOKEN_METADATA.get(token['contractAddress'])
             if metadata is None:
                 metadata = await self.get_token_metadata(client, token['contractAddress'])
@@ -104,7 +108,7 @@ class WalletAnalyzer:
 
     @alru_cache(maxsize=512)
     async def _fetch_prices_cached(self, token_id: str, start_ts: int, end_ts: int):
-        return token_id, start_ts, end_ts  # placeholder, real fetch delegated
+        return token_id, start_ts, end_ts
 
 
     async def get_token_prices(self, client: httpx.AsyncClient, token_id: str, start_ts: int, end_ts: int, headers=None):
@@ -115,12 +119,14 @@ class WalletAnalyzer:
 
         url = self.CG_PRICE_RANGE_URL.format(token_id=token_id)
         params = {'vs_currency': 'eur', 'from': start_ts, 'to': end_ts}
+
         try:
             resp = await client.get(url, params=params, headers=headers, timeout=30)
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
             return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
+
         except Exception:
             return None
 
@@ -158,6 +164,7 @@ class WalletAnalyzer:
 
         return token_price_maps
 
+
     @staticmethod
     def map_price(price_map, ts_float):
         if not price_map:
@@ -166,6 +173,7 @@ class WalletAnalyzer:
         if ts_int in price_map:
             return price_map[ts_int]
         return price_map[min(price_map.keys(), key=lambda k: abs(k - ts_int))]
+
 
     async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC') -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
@@ -277,7 +285,7 @@ class WalletAnalyzer:
             }
 
 
-# WALLET = '0xe742B245cd5A8874aB71c5C004b5B9F877EDf0c0'
+# WALLET = '0x50327c6c5a14DCaDE707ABad2E27eB517df87AB5'
 # analyzer = WalletAnalyzer()
-# result = asyncio.run(analyzer.run(WALLET, '2025-02-01', '2025-09-30'))
+# result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06'))
 # print(json.dumps(result, indent=2))
