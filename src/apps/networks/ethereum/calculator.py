@@ -1,5 +1,6 @@
 import asyncio
 import json
+from collections import defaultdict
 
 from async_lru import alru_cache
 
@@ -203,17 +204,81 @@ class WalletAnalyzer:
         return token_price_maps
 
 
+    # async def calculate_fifo(self, client: httpx.AsyncClient, wallet: str, end_block: str):
+    #     all_incoming_transfers = await self.get_transfers(client, wallet, '0x0', end_block, 'incoming')
+    #     all_outgoing_transfers = await self.get_transfers(client, wallet, '0x0', end_block, 'outgoing')
+    #     print('genesis ', json.dumps(all_incoming_transfers), len(all_outgoing_transfers))
+
     @staticmethod
     def map_price(price_map, ts_float):
         if not price_map:
             return 'unknown'
-        ts_int = int(ts_float)
+        ts_int = round(ts_float)
         if ts_int in price_map:
             return price_map[ts_int]
-        return price_map[min(price_map.keys(), key=lambda k: abs(k - ts_int))]
+        closest_key = min(price_map.keys(), key=lambda k: abs(k - ts_int))
+        return price_map[closest_key]
 
 
-    async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC') -> Dict[str, Any]:
+    @staticmethod
+    def iterate_transactions(transactions):
+        token_dict = defaultdict(list)
+
+        for tx in transactions:
+            asset = tx.get('asset', 'UNKNOWN')
+            ts_str = tx['metadata']['blockTimestamp']
+            ts = datetime.strptime(ts_str, '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
+            amount = tx.get('value', 0)
+            price = tx.get('token_price_eur', 'unknown')
+            value_eur = tx.get('value_eur', 'unknown')
+            token_dict[asset].append({'timestamp': ts, 'amount': amount, 'price': price, 'value_eur': value_eur})
+
+        return token_dict
+
+
+    @staticmethod
+    def calculate_holdings_at_timestamp(incoming, outgoing, cutoff_ts):
+        holdings = defaultdict(lambda: {'amount': 0.0, 'value_eur': 0.0})
+
+        for token, txs in incoming.items():
+            txs.sort(key=lambda x: x['timestamp'])
+        for token, txs in outgoing.items():
+            txs.sort(key=lambda x: x['timestamp'])
+
+        queues = {token: list(txs) for token, txs in incoming.items()}
+
+        for token, outs in outgoing.items():
+            if token not in queues:
+                continue
+            for out in outs:
+                if out['timestamp'] > cutoff_ts:
+                    continue
+                to_remove = out['amount']
+                while to_remove > 0 and queues[token]:
+                    last_in = queues[token][0]
+                    avail = last_in['amount']
+                    if avail <= to_remove:
+                        to_remove -= avail
+                        queues[token].pop(0)
+                    else:
+                        last_in['amount'] -= to_remove
+                        if last_in['price'] != 'unknown' and last_in['value_eur'] != 'unknown':
+                            last_in['value_eur'] = last_in['amount'] * last_in['price']
+                        to_remove = 0
+
+        for token, txs in queues.items():
+            for tx in txs:
+                if tx['timestamp'] <= cutoff_ts:
+                    amt = tx['amount']
+                    val = tx['value_eur']
+                    holdings[token]['amount'] += amt
+                    if val != 'unknown':
+                        holdings[token]['value_eur'] += val
+
+        return holdings
+
+
+    async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             tz = ZoneInfo(timezone)
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
@@ -222,9 +287,15 @@ class WalletAnalyzer:
                 hour=0, minute=0, second=0).replace(tzinfo=tz) + timedelta(days=1)
             start_ts = int(start_dt.timestamp())
             end_ts = int(end_dt.timestamp())
+            # TODO: change to genesis ts with non demo coingecko api
+            # genesis_ts = 0
+            one_year_from_now = datetime.now(tz=tz) - timedelta(days=365)
+            genesis_ts = int(one_year_from_now.timestamp())
 
             start_block = await self.get_block_by_timestamp(client, start_ts)
             end_block = await self.get_block_by_timestamp(client, end_ts)
+
+            start_block_transfers = '0x0' if fifo else start_block
 
             starting_eth = await self.get_wallet_eth_balance(client, wallet, start_block)
             ending_eth = await self.get_wallet_eth_balance(client, wallet, end_block)
@@ -232,11 +303,11 @@ class WalletAnalyzer:
             starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
             ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
 
-            transfers_outgoing = await self.get_transfers(client, wallet, start_block, end_block, 'outgoing')
-            transfers_incoming = await self.get_transfers(client, wallet, start_block, end_block, 'incoming')
+            transfers_outgoing = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'outgoing')
+            transfers_incoming = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'incoming')
 
             headers = {'x-cg-demo-api-key': self.CG_API_KEY}
-            eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': start_ts, 'to': end_ts})
+            eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': genesis_ts, 'to': end_ts})
             eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
 
             tx_contracts = {
@@ -244,7 +315,7 @@ class WalletAnalyzer:
                 for tx in (transfers_outgoing + transfers_incoming)
                 if (tx.get('rawContract') or {}).get('address')
             }
-            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, start_ts, end_ts,
+            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, genesis_ts, end_ts,
                                                                         batch_size=3, pause=1.0, headers=headers)
             tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
             gas_fees_eth = await asyncio.gather(*tasks)
@@ -264,13 +335,9 @@ class WalletAnalyzer:
                         tx['token_price_eur'] = eth_price
                         tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
                     else:
-                        if token_price_map:
-                            token_price = self.map_price(token_price_map, ts)
-                            tx['token_price_eur'] = token_price
-                            tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
-                        else:
-                            tx['token_price_eur'] = 'unknown'
-                            tx['value_eur'] = 'unknown'
+                        token_price = self.map_price(token_price_map, ts)
+                        tx['token_price_eur'] = token_price
+                        tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
 
                 total_gas_eur += tx['gas_fee_eur'] if tx['gas_fee_eur'] != 'unknown' else 0
 
@@ -289,20 +356,27 @@ class WalletAnalyzer:
                         tx['token_price_eur'] = eth_price
                         tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
                     else:
-                        if token_price_map:
-                            token_price = self.map_price(token_price_map, ts)
-                            tx['token_price_eur'] = token_price
-                            tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
-                        else:
-                            tx['token_price_eur'] = 'unknown'
-                            tx['value_eur'] = 'unknown'
+                        token_price = self.map_price(token_price_map, ts)
+                        tx['token_price_eur'] = token_price
+                        tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
 
             for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
                 for contract, token in token_map.items():
                     token_price_map = token_price_maps.get(contract)
                     price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
                     token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
+            print('basic ', len(transfers_incoming), len(transfers_outgoing))
 
+            incoming = self.iterate_transactions(transfers_incoming)
+            outgoing = self.iterate_transactions(transfers_outgoing)
+            # outgoing['ETH'].pop(0)
+            print(f'in: {incoming}\nout: {outgoing}')
+
+            total_holdings = self.calculate_holdings_at_timestamp(incoming, outgoing, start_ts)
+            print(total_holdings)
+            print(starting_eth)
+
+            # await self.calculate_fifo(client, wallet, end_block)
             return {
                 'starting_balance': {
                     'ETH': starting_eth,
@@ -323,7 +397,7 @@ class WalletAnalyzer:
             }
 
 
-# WALLET = '0x50327c6c5a14DCaDE707ABad2E27eB517df87AB5'
-# analyzer = WalletAnalyzer()
-# result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06'))
+WALLET = '0xa9B21B41fC68A14eaA984581dDD0b31641bF287a'
+analyzer = WalletAnalyzer()
+result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06', fifo=True))
 # print(json.dumps(result, indent=2))
