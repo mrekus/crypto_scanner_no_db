@@ -235,17 +235,18 @@ class WalletAnalyzer:
 
         return token_dict
 
-
     @staticmethod
     def calculate_holdings_at_timestamp(incoming, outgoing, cutoff_ts):
+        from collections import defaultdict
         holdings = defaultdict(lambda: {'amount': 0.0, 'value_eur': 0.0})
+        sales = defaultdict(list)
 
         for token, txs in incoming.items():
             txs.sort(key=lambda x: x['timestamp'])
         for token, txs in outgoing.items():
             txs.sort(key=lambda x: x['timestamp'])
 
-        queues = {token: list(txs) for token, txs in incoming.items()}
+        queues = {token: [dict(tx) for tx in txs] for token, txs in incoming.items()}
 
         for token, outs in outgoing.items():
             if token not in queues:
@@ -254,17 +255,36 @@ class WalletAnalyzer:
                 if out['timestamp'] > cutoff_ts:
                     continue
                 to_remove = out['amount']
+                sell_price = out.get('price', 'unknown')
+                sell_ts = out['timestamp']
                 while to_remove > 0 and queues[token]:
                     last_in = queues[token][0]
                     avail = last_in['amount']
+                    buy_price = last_in.get('price', 'unknown')
+                    buy_ts = last_in['timestamp']
+
                     if avail <= to_remove:
-                        to_remove -= avail
+                        used_amt = avail
                         queues[token].pop(0)
                     else:
-                        last_in['amount'] -= to_remove
-                        if last_in['price'] != 'unknown' and last_in['value_eur'] != 'unknown':
+                        used_amt = to_remove
+                        last_in['amount'] -= used_amt
+                        if last_in['price'] != 'unknown':
                             last_in['value_eur'] = last_in['amount'] * last_in['price']
-                        to_remove = 0
+
+                    if buy_price != 'unknown' and sell_price != 'unknown':
+                        sales[token].append({
+                            'timestamp_buy': buy_ts,
+                            'timestamp_sell': sell_ts,
+                            'amount': used_amt,
+                            'price_buy': buy_price,
+                            'price_sell': sell_price,
+                            'value_buy_eur': used_amt * buy_price,
+                            'value_sell_eur': used_amt * sell_price,
+                            'profit_eur': used_amt * (sell_price - buy_price)
+                        })
+
+                    to_remove -= used_amt
 
         for token, txs in queues.items():
             for tx in txs:
@@ -275,7 +295,10 @@ class WalletAnalyzer:
                     if val != 'unknown':
                         holdings[token]['value_eur'] += val
 
-        return holdings
+        for token in sales:
+            sales[token].sort(key=lambda x: x['timestamp_sell'])
+
+        return holdings, sales
 
 
     async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
@@ -366,15 +389,17 @@ class WalletAnalyzer:
                     price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
                     token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
             print('basic ', len(transfers_incoming), len(transfers_outgoing))
+            sales = None
+            total_holdings = None
+            if fifo:
+                incoming = self.iterate_transactions(transfers_incoming)
+                outgoing = self.iterate_transactions(transfers_outgoing)
+                # outgoing['ETH'].pop(0)
+                print(f'in: {incoming}\nout: {outgoing}')
 
-            incoming = self.iterate_transactions(transfers_incoming)
-            outgoing = self.iterate_transactions(transfers_outgoing)
-            # outgoing['ETH'].pop(0)
-            print(f'in: {incoming}\nout: {outgoing}')
-
-            total_holdings = self.calculate_holdings_at_timestamp(incoming, outgoing, start_ts)
-            print(total_holdings)
-            print(starting_eth)
+                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, start_ts)
+                print(total_holdings)
+                print(starting_eth)
 
             # await self.calculate_fifo(client, wallet, end_block)
             return {
@@ -393,11 +418,13 @@ class WalletAnalyzer:
                     'incoming': transfers_incoming
                 },
                 'total_gas_eth': total_gas_eth,
-                'total_gas_eur': total_gas_eur
+                'total_gas_eur': total_gas_eur,
+                'sales': sales,
+                'total_holdings': total_holdings,
             }
 
 
-WALLET = '0xa9B21B41fC68A14eaA984581dDD0b31641bF287a'
-analyzer = WalletAnalyzer()
-result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06', fifo=True))
-# print(json.dumps(result, indent=2))
+# WALLET = '0xa9B21B41fC68A14eaA984581dDD0b31641bF287a'
+# analyzer = WalletAnalyzer()
+# result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06', fifo=True))
+# # print(json.dumps(result, indent=2))

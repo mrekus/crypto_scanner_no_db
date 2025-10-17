@@ -17,14 +17,14 @@ async def calculator_page(request: Request, user: User = Depends(require_user)):
 
 
 @router.get('/check')
-async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', user: User = Depends(require_user)):
+async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False, user: User = Depends(require_user)):
     if isinstance(user, HTMLResponse):
         return user
 
     async def event_generator():
         analyzer = WalletAnalyzer()
         try:
-            result = await analyzer.run(wallet, start_date, end_date, timezone)
+            result = await analyzer.run(wallet, start_date, end_date, timezone, fifo)
             payload = {
                 'starting_balance': {
                     'eth': result['starting_balance']['ETH'],
@@ -40,6 +40,8 @@ async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UT
                 'total_gas_eur': result['total_gas_eur'],
                 'outgoing': result['transactions']['outgoing'],
                 'incoming': result['transactions']['incoming'],
+                'total_holdings': result['total_holdings'],
+                'sales': result['sales'],
             }
             yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
         except Exception as e:
