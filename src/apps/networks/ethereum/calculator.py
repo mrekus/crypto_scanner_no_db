@@ -235,8 +235,9 @@ class WalletAnalyzer:
 
         return token_dict
 
+
     @staticmethod
-    def calculate_holdings_at_timestamp(incoming, outgoing, cutoff_ts):
+    def calculate_holdings_at_timestamp(incoming, outgoing, cutoff_ts, start_ts=None):
         from collections import defaultdict
         holdings = defaultdict(lambda: {'amount': 0.0, 'value_eur': 0.0})
         sales = defaultdict(list)
@@ -297,6 +298,10 @@ class WalletAnalyzer:
 
         for token in sales:
             sales[token].sort(key=lambda x: x['timestamp_sell'])
+
+        if start_ts is not None:
+            for token in sales:
+                sales[token] = [s for s in sales[token] if s['timestamp_sell'] >= start_ts]
 
         return holdings, sales
 
@@ -397,9 +402,9 @@ class WalletAnalyzer:
                 # outgoing['ETH'].pop(0)
                 print(f'in: {incoming}\nout: {outgoing}')
 
-                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, start_ts)
+                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, end_ts, start_ts)
                 print(total_holdings)
-                print(starting_eth)
+                print(sales)
 
             # await self.calculate_fifo(client, wallet, end_block)
             return {

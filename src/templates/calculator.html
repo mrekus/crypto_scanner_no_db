@@ -233,6 +233,7 @@ function formatNumberForDisplay(v){
     if(v === undefined || v === null) return '-';
     const n = (typeof v === 'number') ? v : parseFloat(String(v));
     if(isNaN(n)) return String(v);
+    if(n === 0) return '0';
     if(Math.abs(n) < 0.000001) return n.toExponential();
     return n.toLocaleString(undefined, {maximumFractionDigits: 8});
 }
