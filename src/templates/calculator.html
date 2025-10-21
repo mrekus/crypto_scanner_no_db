@@ -253,9 +253,9 @@ function formatNumberForDisplay(v){
 
 function formatEuro(v){
     if(v === undefined || v === null) return '-';
-    if(typeof v === 'number') return '€' + Number(v).toFixed(2);
+    if(typeof v === 'number') return '€' + Number(v).toFixed(4);
     const parsed = parseFloat(String(v));
-    if(!isNaN(parsed)) return '€' + parsed.toFixed(2);
+    if(!isNaN(parsed)) return '€' + parsed.toFixed(4);
     return String(v);
 }
 
@@ -440,10 +440,10 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
             <td style="padding:4px;border-bottom:1px solid #eee;">${s.token}</td>
             <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_buy, tz)}</td>
             <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_sell, tz)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${buy?.toFixed(2) ?? '-'}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${sell?.toFixed(2) ?? '-'}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(8)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(2)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">€${buy?.toFixed(4) ?? '-'}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">€${sell?.toFixed(4) ?? '-'}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(6)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
         `;
         body.appendChild(row);
     }
@@ -474,9 +474,9 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td style="padding:4px;border-bottom:1px solid #eee;">${token}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${soldAmt.toFixed(8)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${soldVal.toFixed(2)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(2)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">${soldAmt.toFixed(6)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">€${soldVal.toFixed(4)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
         `;
         sbody.appendChild(row);
     }
