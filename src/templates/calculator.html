@@ -140,7 +140,6 @@ button:hover{background:var(--accent-hover);}
             </select>
         </label>
 
-        <!-- FIFO checkbox -->
         <label style="display:flex;align-items:center;gap:8px;">
             <input type="checkbox" id="fifoCheckbox" name="fifo" value="true" />
             <span>Enable FIFO Calculations</span>
@@ -171,7 +170,6 @@ button:hover{background:var(--accent-hover);}
             <tbody></tbody>
         </table>
 
-        <!-- FIFO results table -->
         <div id="fifoResults" style="display:none;">
             <div><strong>FIFO Calculations:</strong></div>
             <table class="tokens-table" id="fifoTable">
@@ -202,6 +200,21 @@ button:hover{background:var(--accent-hover);}
 <div id="toast" class="toast"></div>
 
 <script>
+function formatTsWithTimezone(tsSeconds, timezone) {
+    const tz = timezone || 'UTC';
+    const d = new Date(Number(tsSeconds) * 1000);
+    return d.toLocaleString(undefined, {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+}
+
 const form = document.getElementById('walletForm');
 const startBalanceEl = document.getElementById('startBalance');
 const endBalanceEl = document.getElementById('endBalance');
@@ -235,7 +248,7 @@ function formatNumberForDisplay(v){
     if(isNaN(n)) return String(v);
     if(n === 0) return '0';
     if(Math.abs(n) < 0.000001) return n.toExponential();
-    return n.toLocaleString(undefined, {maximumFractionDigits: 8});
+    return n.toLocaleString(undefined, {maximumFractionDigits: 8, hour12: false});
 }
 
 function formatEuro(v){
@@ -286,7 +299,7 @@ form.addEventListener('submit', async (e)=>{
                 }
                 if(data.type === 'result'){
                     const res = data.data;
-
+                    const tz = form.querySelector('select[name="timezone"]').value || 'UTC';
                     const startEth = res.starting_balance?.eth ?? 0;
                     const startEur = res.starting_balance?.eur ?? 0;
                     const endEth = res.ending_balance?.eth ?? 0;
@@ -366,10 +379,9 @@ form.addEventListener('submit', async (e)=>{
                             <td>${formatEuro(deltaVal)}</td>`;
                         tokensTableBody.appendChild(row);
                     });
-// FIFO section — fixed display and structure
 if (fifoChecked && (res.total_holdings || res.sales)) {
     fifoResults.style.display = 'block';
-    fifoResults.innerHTML = ''; // clear old FIFO results
+    fifoResults.innerHTML = '';
 
     const holdings = res.total_holdings || {};
     const salesRaw = res.sales || {};
@@ -384,7 +396,6 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
     }
 
     const num = v => (v === undefined ? undefined : Number(v));
-    const tsToIso = ts => new Date(Number(ts) * 1000).toISOString();
 
     const makeTable = (title, headers) => {
         const table = document.createElement('table');
@@ -402,11 +413,10 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
         return table;
     };
 
-    // ===== FIFO SALES TABLE =====
     const fifoTable = makeTable('FIFO Sales', [
         'Token',
-        'Buy Timestamp',
-        'Sell Timestamp',
+        'Buy Datetime',
+        'Sell Datetime',
         'Buy Price (EUR)',
         'Sell Price (EUR)',
         'Amount',
@@ -428,8 +438,8 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
         const row = document.createElement('tr');
         row.innerHTML = `
             <td style="padding:4px;border-bottom:1px solid #eee;">${s.token}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${tsToIso(s.timestamp_buy)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${tsToIso(s.timestamp_sell)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_buy, tz)}</td>
+            <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_sell, tz)}</td>
             <td style="padding:4px;border-bottom:1px solid #eee;">€${buy?.toFixed(2) ?? '-'}</td>
             <td style="padding:4px;border-bottom:1px solid #eee;">€${sell?.toFixed(2) ?? '-'}</td>
             <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(8)}</td>
@@ -438,7 +448,6 @@ if (fifoChecked && (res.total_holdings || res.sales)) {
         body.appendChild(row);
     }
 
-    // ===== FIFO SUMMARY TABLE =====
     const summaryTable = makeTable('FIFO Summary', [
         'Token',
         'Sold Amount',

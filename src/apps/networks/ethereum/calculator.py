@@ -1,6 +1,7 @@
 import asyncio
 import json
 from collections import defaultdict
+from pathlib import Path
 
 from async_lru import alru_cache
 
@@ -21,6 +22,8 @@ class WalletAnalyzer:
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
         self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
         self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
+        self.token_metadata_path = 'apps/networks/ethereum/token_metadata.json'
+        self.token_metadata = load_json_file(self.token_metadata_path)
 
         self.semaphore = asyncio.Semaphore(3)
 
@@ -73,25 +76,36 @@ class WalletAnalyzer:
         }
         resp = await client.post(self.URL_API, json=payload)
         resp.raise_for_status()
+
         balances = {}
+        updated = False
+
         for token in resp.json().get('result', {}).get('tokenBalances', []):
             raw_balance = int(token['tokenBalance'], 16)
 
             if raw_balance == 0:
                 continue
 
-            metadata = cfg.ERC20_TOKEN_METADATA.get(token['contractAddress'])
+            contract_address = token['contractAddress'].lower()
+            metadata = self.token_metadata.get(contract_address)
+
             if metadata is None:
-                metadata = await self.get_token_metadata(client, token['contractAddress'])
-                cfg.ERC20_TOKEN_METADATA[token['contractAddress']] = metadata
+                metadata = await self.get_token_metadata(client, contract_address)
+                self.token_metadata[contract_address] = metadata
+                updated = True
+
             decimals = metadata.get('decimals', 18)
-            symbol = metadata.get('symbol', token['contractAddress'][:6])
+            symbol = metadata.get('symbol', contract_address[:6])
             name = metadata.get('name', '')
-            balances[token['contractAddress']] = {
+            balances[contract_address] = {
                 'symbol': symbol,
                 'name': name,
                 'balance': raw_balance / (10 ** decimals),
             }
+
+        if updated:
+            with open(self.token_metadata_path, 'w', encoding='utf-8') as f:
+                json.dump(self.token_metadata, f, ensure_ascii=False, indent=2)
 
         return balances
 
