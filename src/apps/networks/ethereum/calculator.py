@@ -8,7 +8,7 @@ from async_lru import alru_cache
 import httpx
 from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from conf import cfg
 from utils.utils import load_json_file
@@ -320,13 +320,13 @@ class WalletAnalyzer:
         return holdings, sales
 
 
-    async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
+    async def run(self, wallets: List[str], start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
             tz = ZoneInfo(timezone)
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
-                hour=0, minute=0, second=0).replace(tzinfo=tz)
+                hour=0, minute=0, second=0, tzinfo=tz)
             end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(
-                hour=0, minute=0, second=0).replace(tzinfo=tz) + timedelta(days=1)
+                hour=0, minute=0, second=0, tzinfo=tz) + timedelta(days=1)
             start_ts = int(start_dt.timestamp())
             end_ts = int(end_dt.timestamp())
             # TODO: change to genesis ts with non demo coingecko api
@@ -413,14 +413,12 @@ class WalletAnalyzer:
             if fifo:
                 incoming = self.iterate_transactions(transfers_incoming)
                 outgoing = self.iterate_transactions(transfers_outgoing)
-                # outgoing['ETH'].pop(0)
                 print(f'in: {incoming}\nout: {outgoing}')
 
                 total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, end_ts, start_ts)
                 print(total_holdings)
                 print(sales)
 
-            # await self.calculate_fifo(client, wallet, end_block)
             return {
                 'starting_balance': {
                     'ETH': starting_eth,

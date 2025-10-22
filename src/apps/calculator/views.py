@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Request
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Request, Query
 from fastapi.responses import StreamingResponse, HTMLResponse
 import json
 
@@ -17,14 +19,21 @@ async def calculator_page(request: Request, user: User = Depends(require_user)):
 
 
 @router.get('/check')
-async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False, user: User = Depends(require_user)):
-    if isinstance(user, HTMLResponse):
-        return user
+async def check(
+    wallets: List[str] = Query(...),
+    start_date: str = None,
+    end_date: str = None,
+    timezone: str = 'UTC',
+    fifo: bool = False,
+    user: User = Depends(require_user)
+):
+    # if isinstance(user, HTMLResponse):
+    #     return user
 
     async def event_generator():
         analyzer = WalletAnalyzer()
         try:
-            result = await analyzer.run(wallet, start_date, end_date, timezone, fifo)
+            result = await analyzer.run(wallets, start_date, end_date, timezone, fifo)
             payload = {
                 'starting_balance': {
                     'eth': result['starting_balance']['ETH'],
@@ -43,7 +52,9 @@ async def check(wallet: str, start_date: str, end_date: str, timezone: str = 'UT
                 'total_holdings': result['total_holdings'],
                 'sales': result['sales'],
             }
+
             yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
+
         except Exception as e:
             yield f"data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n"
 

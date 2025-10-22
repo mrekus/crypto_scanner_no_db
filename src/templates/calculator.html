@@ -110,15 +110,40 @@ button:hover{background:var(--accent-hover);}
     overflow:hidden;clip:rect(1px,1px,1px,1px);
     white-space:nowrap;border:0;padding:0;margin:-1px;
 }
+.add-wallet-btn {
+    display: inline-block;
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+    border: none;
+    padding: 10px 16px;
+    margin-top: 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+.add-wallet-btn:hover {
+    background-color: #137e14;
+}
 </style>
 </head>
 <body>
 <div class="container">
     <h1>Wallet Calculator</h1>
     <form id="walletForm">
-        <label>
-            <input type="text" name="wallet" placeholder="Wallet Address" required />
+        <div id="walletInputs">
+            <label>
+                <input type="text" name="wallet" placeholder="Wallet Address" required />
+            </label>
+        </div>
+
+        <label style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="multiWalletCheckbox" />
+            <span>Enable Multi-Wallet Mode</span>
         </label>
+        <button type="button" id="addWalletBtn" class="add-wallet-btn" style="display:none;">Add wallet</button>
+
         <label>
             <input type="date" name="start_date" required />
         </label>
@@ -270,23 +295,64 @@ today.setDate(today.getDate() - 1);
 const maxDate = today.toISOString().split('T')[0];
 document.querySelectorAll('input[type="date"]').forEach(el => el.max = maxDate);
 
-form.addEventListener('submit', async (e)=>{
+const multiWalletCheckbox = document.getElementById('multiWalletCheckbox');
+const walletInputs = document.getElementById('walletInputs');
+const addWalletBtn = document.getElementById('addWalletBtn');
+
+multiWalletCheckbox.addEventListener('change', () => {
+    if (multiWalletCheckbox.checked) {
+        // Show add wallet button and replace single wallet input with first wallets field
+        addWalletBtn.style.display = 'inline-block';
+        // clear and add the first wallet input but name it "wallets"
+        walletInputs.innerHTML = '';
+        const label = document.createElement('label');
+        label.innerHTML = `<input type="text" name="wallets" placeholder="Wallet Address" required />`;
+        walletInputs.appendChild(label);
+    } else {
+        // hide add wallet button and restore single wallet input exactly as before
+        addWalletBtn.style.display = 'none';
+        walletInputs.innerHTML = `<label><input type="text" name="wallet" placeholder="Wallet Address" required /></label>`;
+    }
+});
+
+addWalletBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    startBalanceEl.textContent='Loading...';
-    endBalanceEl.textContent='Loading...';
-    gasEl.textContent='Loading...';
-    eventsLogEl.textContent='Loading...';
-    transactionsOutgoingEl.textContent='Loading...';
-    transactionsIncomingEl.textContent='Loading...';
-    tokensTableBody.innerHTML='<tr><td colspan="7">Loading...</td></tr>';
-    fifoResults.style.display='none';
+    // append another wallets input (name="wallets")
+    const label = document.createElement('label');
+    label.innerHTML = `<input type="text" name="wallets" placeholder="Wallet Address" required />`;
+    walletInputs.appendChild(label);
+});
 
-    const formData = new FormData(form);
+form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    startBalanceEl.textContent = 'Loading...';
+    endBalanceEl.textContent = 'Loading...';
+    gasEl.textContent = 'Loading...';
+    eventsLogEl.textContent = 'Loading...';
+    transactionsOutgoingEl.textContent = 'Loading...';
+    transactionsIncomingEl.textContent = 'Loading...';
+    tokensTableBody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
+    fifoResults.style.display = 'none';
+
     const fifoChecked = document.getElementById('fifoCheckbox').checked;
-    if(fifoChecked) formData.append('fifo','true');
-    const params = new URLSearchParams(formData);
 
-    try{
+    // Gather all wallet inputs regardless of multi-wallet mode
+    const walletEls = [...walletInputs.querySelectorAll('input[name="wallet"], input[name="wallets"]')];
+    const wallets = walletEls.map(i => (i.value || '').trim()).filter(Boolean);
+    if (wallets.length === 0) {
+        showToast('Enter at least one wallet address');
+        return;
+    }
+
+    // Always send a single param 'wallets' as comma-separated
+    const params = new URLSearchParams();
+    params.set('wallets', wallets.join(','));
+    params.set('start_date', form.querySelector('input[name="start_date"]').value);
+    params.set('end_date', form.querySelector('input[name="end_date"]').value);
+    params.set('timezone', form.querySelector('select[name="timezone"]').value || 'UTC');
+    if (fifoChecked) params.set('fifo', 'true');
+
+    try {
         const evtSource = new EventSource('/check?' + params.toString());
 
         evtSource.onmessage = function(event){
@@ -379,108 +445,109 @@ form.addEventListener('submit', async (e)=>{
                             <td>${formatEuro(deltaVal)}</td>`;
                         tokensTableBody.appendChild(row);
                     });
-if (fifoChecked && (res.total_holdings || res.sales)) {
-    fifoResults.style.display = 'block';
-    fifoResults.innerHTML = '';
 
-    const holdings = res.total_holdings || {};
-    const salesRaw = res.sales || {};
+                    if (fifoChecked && (res.total_holdings || res.sales)) {
+                        fifoResults.style.display = 'block';
+                        fifoResults.innerHTML = '';
 
-    const salesList = [];
-    if (Array.isArray(salesRaw)) {
-        salesRaw.forEach(s => salesList.push({ ...s }));
-    } else if (salesRaw && typeof salesRaw === 'object') {
-        for (const token in salesRaw) {
-            (salesRaw[token] || []).forEach(s => salesList.push({ token, ...s }));
-        }
-    }
+                        const holdings = res.total_holdings || {};
+                        const salesRaw = res.sales || {};
 
-    const num = v => (v === undefined ? undefined : Number(v));
+                        const salesList = [];
+                        if (Array.isArray(salesRaw)) {
+                            salesRaw.forEach(s => salesList.push({ ...s }));
+                        } else if (salesRaw && typeof salesRaw === 'object') {
+                            for (const token in salesRaw) {
+                                (salesRaw[token] || []).forEach(s => salesList.push({ token, ...s }));
+                            }
+                        }
 
-    const makeTable = (title, headers) => {
-        const table = document.createElement('table');
-        table.style.width = '100%';
-        table.style.borderCollapse = 'collapse';
-        table.style.marginTop = '15px';
-        table.style.border = '1px solid #ccc';
-        table.innerHTML = `
-            <thead style="background:#f4f4f4;border-bottom:1px solid #ccc;">
-                <tr><th colspan="${headers.length}" style="text-align:left;padding:8px 4px;">${title}</th></tr>
-                <tr>${headers.map(h => `<th style="padding:4px;border-bottom:1px solid #ccc;text-align:left;">${h}</th>`).join('')}</tr>
-            </thead>
-            <tbody></tbody>
-        `;
-        return table;
-    };
+                        const num = v => (v === undefined ? undefined : Number(v));
 
-    const fifoTable = makeTable('FIFO Sales', [
-        'Token',
-        'Buy Datetime',
-        'Sell Datetime',
-        'Buy Price (EUR)',
-        'Sell Price (EUR)',
-        'Amount',
-        'Profit (EUR)'
-    ]);
-    fifoResults.appendChild(fifoTable);
-    const body = fifoTable.querySelector('tbody');
+                        const makeTable = (title, headers) => {
+                            const table = document.createElement('table');
+                            table.style.width = '100%';
+                            table.style.borderCollapse = 'collapse';
+                            table.style.marginTop = '15px';
+                            table.style.border = '1px solid #ccc';
+                            table.innerHTML = `
+                                <thead style="background:#f4f4f4;border-bottom:1px solid #ccc;">
+                                    <tr><th colspan="${headers.length}" style="text-align:left;padding:8px 4px;">${title}</th></tr>
+                                    <tr>${headers.map(h => `<th style="padding:4px;border-bottom:1px solid #ccc;text-align:left;">${h}</th>`).join('')}</tr>
+                                </thead>
+                                <tbody></tbody>
+                            `;
+                            return table;
+                        };
 
-    salesList.sort((a, b) => num(a.timestamp_sell) - num(b.timestamp_sell));
+                        const fifoTable = makeTable('FIFO Sales', [
+                            'Token',
+                            'Buy Datetime',
+                            'Sell Datetime',
+                            'Buy Price (EUR)',
+                            'Sell Price (EUR)',
+                            'Amount',
+                            'Profit (EUR)'
+                        ]);
+                        fifoResults.appendChild(fifoTable);
+                        const body = fifoTable.querySelector('tbody');
 
-    for (const s of salesList) {
-        const buy = num(s.price_buy);
-        const sell = num(s.price_sell);
-        const amt = num(s.amount) || 0;
-        const buyVal = num(s.value_buy_eur) ?? (buy ? buy * amt : 0);
-        const sellVal = num(s.value_sell_eur) ?? (sell ? sell * amt : 0);
-        const profit = sellVal - buyVal;
+                        salesList.sort((a, b) => num(a.timestamp_sell) - num(b.timestamp_sell));
 
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td style="padding:4px;border-bottom:1px solid #eee;">${s.token}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_buy, tz)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_sell, tz)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${buy?.toFixed(4) ?? '-'}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${sell?.toFixed(4) ?? '-'}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(6)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
-        `;
-        body.appendChild(row);
-    }
+                        for (const s of salesList) {
+                            const buy = num(s.price_buy);
+                            const sell = num(s.price_sell);
+                            const amt = num(s.amount) || 0;
+                            const buyVal = num(s.value_buy_eur) ?? (buy ? buy * amt : 0);
+                            const sellVal = num(s.value_sell_eur) ?? (sell ? sell * amt : 0);
+                            const profit = sellVal - buyVal;
 
-    const summaryTable = makeTable('FIFO Summary', [
-        'Token',
-        'Sold Amount',
-        'Sold Value (EUR)',
-        'Profit (EUR)'
-    ]);
-    fifoResults.appendChild(summaryTable);
-    const sbody = summaryTable.querySelector('tbody');
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${s.token}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_buy, tz)}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${formatTsWithTimezone(s.timestamp_sell, tz)}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">€${buy?.toFixed(4) ?? '-'}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">€${sell?.toFixed(4) ?? '-'}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(6)}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
+                            `;
+                            body.appendChild(row);
+                        }
 
-    const tokens = new Set(salesList.map(s => s.token));
+                        const summaryTable = makeTable('FIFO Summary', [
+                            'Token',
+                            'Sold Amount',
+                            'Sold Value (EUR)',
+                            'Profit (EUR)'
+                        ]);
+                        fifoResults.appendChild(summaryTable);
+                        const sbody = summaryTable.querySelector('tbody');
 
-    for (const token of tokens) {
-        const soldRows = salesList.filter(s => s.token === token);
-        const soldAmt = soldRows.reduce((a, s) => a + (num(s.amount) || 0), 0);
-        if (soldAmt === 0) continue;
+                        const tokens = new Set(salesList.map(s => s.token));
 
-        const soldVal = soldRows.reduce((a, s) => a + (num(s.value_sell_eur) || 0), 0);
-        const profit = soldRows.reduce((a, s) => {
-            const b = num(s.value_buy_eur);
-            const c = num(s.value_sell_eur);
-            return a + ((c && b) ? (c - b) : 0);
-        }, 0);
+                        for (const token of tokens) {
+                            const soldRows = salesList.filter(s => s.token === token);
+                            const soldAmt = soldRows.reduce((a, s) => a + (num(s.amount) || 0), 0);
+                            if (soldAmt === 0) continue;
 
-        const row = document.createElement('tr');
-        row.innerHTML = `
-            <td style="padding:4px;border-bottom:1px solid #eee;">${token}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">${soldAmt.toFixed(6)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${soldVal.toFixed(4)}</td>
-            <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
-        `;
-        sbody.appendChild(row);
-    }
-}
+                            const soldVal = soldRows.reduce((a, s) => a + (num(s.value_sell_eur) || 0), 0);
+                            const profit = soldRows.reduce((a, s) => {
+                                const b = num(s.value_buy_eur);
+                                const c = num(s.value_sell_eur);
+                                return a + ((c && b) ? (c - b) : 0);
+                            }, 0);
+
+                            const row = document.createElement('tr');
+                            row.innerHTML = `
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${token}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">${soldAmt.toFixed(6)}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">€${soldVal.toFixed(4)}</td>
+                                <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
+                            `;
+                            sbody.appendChild(row);
+                        }
+                    }
 
                     transactionsOutgoingEl.textContent = Array.isArray(res.outgoing) && res.outgoing.length ? JSON.stringify(res.outgoing, null, 2) : 'No outgoing transactions';
                     transactionsIncomingEl.textContent = Array.isArray(res.incoming) && res.incoming.length ? JSON.stringify(res.incoming, null, 2) : 'No incoming transactions';
