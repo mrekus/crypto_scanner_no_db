@@ -8,7 +8,7 @@ from async_lru import alru_cache
 import httpx
 from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from conf import cfg
 from utils.utils import load_json_file
@@ -320,105 +320,107 @@ class WalletAnalyzer:
         return holdings, sales
 
 
-    async def run(self, wallet: str, start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
+    async def run(self, wallets: List[str], start_date: str, end_date: str, timezone: str = 'UTC', fifo: bool = False) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
-            tz = ZoneInfo(timezone)
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
-                hour=0, minute=0, second=0).replace(tzinfo=tz)
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(
-                hour=0, minute=0, second=0).replace(tzinfo=tz) + timedelta(days=1)
-            start_ts = int(start_dt.timestamp())
-            end_ts = int(end_dt.timestamp())
-            # TODO: change to genesis ts with non demo coingecko api
-            # genesis_ts = 0
-            one_year_from_now = datetime.now(tz=tz) - timedelta(days=365)
-            genesis_ts = int(one_year_from_now.timestamp())
+            print(wallets, type(wallets))
+            for wallet in wallets:
+                tz = ZoneInfo(timezone)
+                start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
+                    hour=0, minute=0, second=0).replace(tzinfo=tz)
+                end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(
+                    hour=0, minute=0, second=0).replace(tzinfo=tz) + timedelta(days=1)
+                start_ts = int(start_dt.timestamp())
+                end_ts = int(end_dt.timestamp())
+                # TODO: change to genesis ts with non demo coingecko api
+                # genesis_ts = 0
+                one_year_from_now = datetime.now(tz=tz) - timedelta(days=365)
+                genesis_ts = int(one_year_from_now.timestamp())
 
-            start_block = await self.get_block_by_timestamp(client, start_ts)
-            end_block = await self.get_block_by_timestamp(client, end_ts)
+                start_block = await self.get_block_by_timestamp(client, start_ts)
+                end_block = await self.get_block_by_timestamp(client, end_ts)
 
-            start_block_transfers = '0x0' if fifo else start_block
+                start_block_transfers = '0x0' if fifo else start_block
 
-            starting_eth = await self.get_wallet_eth_balance(client, wallet, start_block)
-            ending_eth = await self.get_wallet_eth_balance(client, wallet, end_block)
+                starting_eth = await self.get_wallet_eth_balance(client, wallet, start_block)
+                ending_eth = await self.get_wallet_eth_balance(client, wallet, end_block)
 
-            starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
-            ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
+                starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
+                ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
 
-            transfers_outgoing = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'outgoing')
-            transfers_incoming = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'incoming')
+                transfers_outgoing = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'outgoing')
+                transfers_incoming = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'incoming')
 
-            headers = {'x-cg-demo-api-key': self.CG_API_KEY}
-            eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': genesis_ts, 'to': end_ts})
-            eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
+                headers = {'x-cg-demo-api-key': self.CG_API_KEY}
+                eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': genesis_ts, 'to': end_ts})
+                eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
 
-            tx_contracts = {
-                (tx.get('rawContract') or {}).get('address')
-                for tx in (transfers_outgoing + transfers_incoming)
-                if (tx.get('rawContract') or {}).get('address')
-            }
-            token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, genesis_ts, end_ts,
-                                                                        batch_size=3, pause=1.0, headers=headers)
-            tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
-            gas_fees_eth = await asyncio.gather(*tasks)
-            total_gas_eur = 0
-            for tx, fee in zip(transfers_outgoing, gas_fees_eth):
-                ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-                eth_price = self.map_price(eth_price_map, ts)
-                tx['gas_fee_eth'] = fee
-                tx['gas_fee_eur'] = fee * eth_price if eth_price != 'unknown' else 'unknown'
+                tx_contracts = {
+                    (tx.get('rawContract') or {}).get('address')
+                    for tx in (transfers_outgoing + transfers_incoming)
+                    if (tx.get('rawContract') or {}).get('address')
+                }
+                token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, genesis_ts, end_ts,
+                                                                            batch_size=3, pause=1.0, headers=headers)
+                tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
+                gas_fees_eth = await asyncio.gather(*tasks)
+                total_gas_eur = 0
+                for tx, fee in zip(transfers_outgoing, gas_fees_eth):
+                    ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
+                    eth_price = self.map_price(eth_price_map, ts)
+                    tx['gas_fee_eth'] = fee
+                    tx['gas_fee_eur'] = fee * eth_price if eth_price != 'unknown' else 'unknown'
 
-                contract = tx.get('rawContract').get('address')
-                token_price_map = token_price_maps.get(contract)
-                if 'value' in tx:
-                    amount = float(tx['value'])
-                    if tx.get('asset') == 'ETH':
-                        eth_price = self.map_price(eth_price_map, ts)
-                        tx['token_price_eur'] = eth_price
-                        tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
-                    else:
-                        token_price = self.map_price(token_price_map, ts)
-                        tx['token_price_eur'] = token_price
-                        tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
-
-                total_gas_eur += tx['gas_fee_eur'] if tx['gas_fee_eur'] != 'unknown' else 0
-
-            total_gas_eth = sum(gas_fees_eth)
-
-            for tx in transfers_incoming:
-                ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
-
-                contract = tx.get('rawContract', {}).get('address')
-                token_price_map = token_price_maps.get(contract)
-
-                if 'value' in tx:
-                    amount = float(tx['value'])
-                    if tx.get('asset') == 'ETH':
-                        eth_price = self.map_price(eth_price_map, ts)
-                        tx['token_price_eur'] = eth_price
-                        tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
-                    else:
-                        token_price = self.map_price(token_price_map, ts)
-                        tx['token_price_eur'] = token_price
-                        tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
-
-            for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
-                for contract, token in token_map.items():
+                    contract = tx.get('rawContract').get('address')
                     token_price_map = token_price_maps.get(contract)
-                    price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
-                    token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
-            print('basic ', len(transfers_incoming), len(transfers_outgoing))
-            sales = None
-            total_holdings = None
-            if fifo:
-                incoming = self.iterate_transactions(transfers_incoming)
-                outgoing = self.iterate_transactions(transfers_outgoing)
-                # outgoing['ETH'].pop(0)
-                print(f'in: {incoming}\nout: {outgoing}')
+                    if 'value' in tx:
+                        amount = float(tx['value'])
+                        if tx.get('asset') == 'ETH':
+                            eth_price = self.map_price(eth_price_map, ts)
+                            tx['token_price_eur'] = eth_price
+                            tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
+                        else:
+                            token_price = self.map_price(token_price_map, ts)
+                            tx['token_price_eur'] = token_price
+                            tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
 
-                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, end_ts, start_ts)
-                print(total_holdings)
-                print(sales)
+                    total_gas_eur += tx['gas_fee_eur'] if tx['gas_fee_eur'] != 'unknown' else 0
+
+                total_gas_eth = sum(gas_fees_eth)
+
+                for tx in transfers_incoming:
+                    ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
+
+                    contract = tx.get('rawContract', {}).get('address')
+                    token_price_map = token_price_maps.get(contract)
+
+                    if 'value' in tx:
+                        amount = float(tx['value'])
+                        if tx.get('asset') == 'ETH':
+                            eth_price = self.map_price(eth_price_map, ts)
+                            tx['token_price_eur'] = eth_price
+                            tx['value_eur'] = amount * eth_price if eth_price != 'unknown' else 'unknown'
+                        else:
+                            token_price = self.map_price(token_price_map, ts)
+                            tx['token_price_eur'] = token_price
+                            tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
+
+                for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
+                    for contract, token in token_map.items():
+                        token_price_map = token_price_maps.get(contract)
+                        price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
+                        token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
+                print('basic ', len(transfers_incoming), len(transfers_outgoing))
+                sales = None
+                total_holdings = None
+                if fifo:
+                    incoming = self.iterate_transactions(transfers_incoming)
+                    outgoing = self.iterate_transactions(transfers_outgoing)
+                    # outgoing['ETH'].pop(0)
+                    print(f'in: {incoming}\nout: {outgoing}')
+
+                    total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, end_ts, start_ts)
+                    print(total_holdings)
+                    print(sales)
 
             # await self.calculate_fifo(client, wallet, end_block)
             return {
