@@ -339,14 +339,42 @@ class WalletAnalyzer:
 
             start_block_transfers = '0x0' if fifo else start_block
 
-            starting_eth = await self.get_wallet_eth_balance(client, wallet, start_block)
-            ending_eth = await self.get_wallet_eth_balance(client, wallet, end_block)
+            total_starting_eth = 0
+            total_ending_eth = 0
 
-            starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
-            ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
+            combined_starting_tokens: Dict[str, Any] = {}
+            combined_ending_tokens: Dict[str, Any] = {}
 
-            transfers_outgoing = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'outgoing')
-            transfers_incoming = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'incoming')
+            combined_transfers_outgoing = []
+            combined_transfers_incoming = []
+
+            for wallet in wallets:
+                starting_eth = await self.get_wallet_eth_balance(client, wallet, start_block)
+                ending_eth = await self.get_wallet_eth_balance(client, wallet, end_block)
+
+                total_starting_eth += starting_eth
+                total_ending_eth += ending_eth
+
+                starting_tokens = await self.get_wallet_token_balances(client, wallet, start_block)
+                ending_tokens = await self.get_wallet_token_balances(client, wallet, end_block)
+
+                for contract, token in starting_tokens.items():
+                    if contract not in combined_starting_tokens:
+                        combined_starting_tokens[contract] = token.copy()
+                    else:
+                        combined_starting_tokens[contract]['balance'] += token['balance']
+
+                for contract, token in ending_tokens.items():
+                    if contract not in combined_ending_tokens:
+                        combined_ending_tokens[contract] = token.copy()
+                    else:
+                        combined_ending_tokens[contract]['balance'] += token['balance']
+
+                transfers_outgoing = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'outgoing')
+                transfers_incoming = await self.get_transfers(client, wallet, start_block_transfers, end_block, 'incoming')
+
+                combined_transfers_outgoing.extend(transfers_outgoing)
+                combined_transfers_incoming.extend(transfers_incoming)
 
             headers = {'x-cg-demo-api-key': self.CG_API_KEY}
             eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': genesis_ts, 'to': end_ts})
@@ -354,15 +382,15 @@ class WalletAnalyzer:
 
             tx_contracts = {
                 (tx.get('rawContract') or {}).get('address')
-                for tx in (transfers_outgoing + transfers_incoming)
+                for tx in (combined_transfers_outgoing + combined_transfers_incoming)
                 if (tx.get('rawContract') or {}).get('address')
             }
             token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, genesis_ts, end_ts,
                                                                         batch_size=3, pause=1.0, headers=headers)
-            tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in transfers_outgoing]
+            tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in combined_transfers_outgoing]
             gas_fees_eth = await asyncio.gather(*tasks)
             total_gas_eur = 0
-            for tx, fee in zip(transfers_outgoing, gas_fees_eth):
+            for tx, fee in zip(combined_transfers_outgoing, gas_fees_eth):
                 ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
                 eth_price = self.map_price(eth_price_map, ts)
                 tx['gas_fee_eth'] = fee
@@ -385,7 +413,7 @@ class WalletAnalyzer:
 
             total_gas_eth = sum(gas_fees_eth)
 
-            for tx in transfers_incoming:
+            for tx in combined_transfers_incoming:
                 ts = datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
 
                 contract = tx.get('rawContract', {}).get('address')
@@ -402,37 +430,41 @@ class WalletAnalyzer:
                         tx['token_price_eur'] = token_price
                         tx['value_eur'] = amount * token_price if token_price != 'unknown' else 'unknown'
 
-            for token_map, ts in [(starting_tokens, start_ts), (ending_tokens, end_ts)]:
+            for token_map, ts in [(combined_starting_tokens, start_ts), (combined_ending_tokens, end_ts)]:
                 for contract, token in token_map.items():
                     token_price_map = token_price_maps.get(contract)
                     price = self.map_price(token_price_map, ts) if token_price_map else 'unknown'
                     token['value_eur'] = token['balance'] * price if price != 'unknown' else 'unknown'
-            print('basic ', len(transfers_incoming), len(transfers_outgoing))
+
             sales = None
             total_holdings = None
             if fifo:
-                incoming = self.iterate_transactions(transfers_incoming)
-                outgoing = self.iterate_transactions(transfers_outgoing)
-                print(f'in: {incoming}\nout: {outgoing}')
+                wallet_set = set(w.lower() for w in wallets)
 
-                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming, outgoing, end_ts, start_ts)
-                print(total_holdings)
-                print(sales)
+                filtered_incoming = [tx for tx in combined_transfers_incoming if
+                                     tx.get('from', '').lower() not in wallet_set]
+                filtered_outgoing = [tx for tx in combined_transfers_outgoing if
+                                     tx.get('to', '').lower() not in wallet_set]
+
+                incoming_iter = self.iterate_transactions(filtered_incoming)
+                outgoing_iter = self.iterate_transactions(filtered_outgoing)
+
+                total_holdings, sales = self.calculate_holdings_at_timestamp(incoming_iter, outgoing_iter, end_ts, start_ts)
 
             return {
                 'starting_balance': {
-                    'ETH': starting_eth,
-                    'ETH_eur': starting_eth * self.map_price(eth_price_map, start_ts),
-                    'tokens': starting_tokens
+                    'ETH': total_starting_eth,
+                    'ETH_eur': total_starting_eth * self.map_price(eth_price_map, start_ts),
+                    'tokens': combined_starting_tokens
                 },
                 'ending_balance': {
-                    'ETH': ending_eth,
-                    'ETH_eur': ending_eth * self.map_price(eth_price_map, end_ts),
-                    'tokens': ending_tokens
+                    'ETH': total_ending_eth,
+                    'ETH_eur': total_ending_eth * self.map_price(eth_price_map, end_ts),
+                    'tokens': combined_ending_tokens
                 },
                 'transactions': {
-                    'outgoing': transfers_outgoing,
-                    'incoming': transfers_incoming
+                    'outgoing': combined_transfers_outgoing,
+                    'incoming': combined_transfers_incoming
                 },
                 'total_gas_eth': total_gas_eth,
                 'total_gas_eur': total_gas_eur,

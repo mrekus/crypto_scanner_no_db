@@ -29,6 +29,7 @@ async def check(
 ):
     # if isinstance(user, HTMLResponse):
     #     return user
+    wallets = [w.strip() for w in wallets[0].split(',')]
 
     async def event_generator():
         analyzer = WalletAnalyzer()
