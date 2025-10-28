@@ -178,6 +178,21 @@ button:hover{background:var(--accent-hover);}
         <div><strong>Ending Balance:</strong> <span id="endBalance">-</span></div>
         <div><strong>Gas Used:</strong> <span id="gasUsed">-</span></div>
 
+        <div id="fifoSummaryContainer" style="display:none;">
+            <div><strong>FIFO Summary:</strong></div>
+            <table class="tokens-table" id="fifoSummaryTable">
+                <thead>
+                    <tr>
+                        <th>Token</th>
+                        <th>Sold Amount</th>
+                        <th>Sold Value (EUR)</th>
+                        <th>Profit (EUR)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
         <div><strong>Tokens:</strong></div>
         <table class="tokens-table" id="tokensTable" aria-describedby="tokens-table-desc">
             <caption id="tokens-table-desc" class="visually-hidden">Token balances — start, end, and difference values</caption>
@@ -195,20 +210,8 @@ button:hover{background:var(--accent-hover);}
             <tbody></tbody>
         </table>
 
-        <div id="fifoResults" style="display:none;">
-            <div><strong>FIFO Calculations:</strong></div>
-            <table class="tokens-table" id="fifoTable">
-                <thead>
-                    <tr>
-                        <th>Token</th>
-                        <th>Remaining Amount</th>
-                        <th>Remaining Value (EUR)</th>
-                        <th>Sold Amount</th>
-                        <th>Sold Value (EUR)</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+        <div id="fifoSalesContainer" style="display:none;">
+            <div><strong>FIFO Sales:</strong></div>
         </div>
 
         <div><strong>Events / Logs:</strong></div>
@@ -251,8 +254,9 @@ const tokensTableBody = document.getElementById('tokensTable').querySelector('tb
 const toastEl = document.getElementById('toast');
 const outgoingHeader = document.getElementById('outgoingHeader');
 const incomingHeader = document.getElementById('incomingHeader');
-const fifoResults = document.getElementById('fifoResults');
-const fifoTableBody = document.getElementById('fifoTable').querySelector('tbody');
+const fifoSalesContainer = document.getElementById('fifoSalesContainer');
+const fifoSummaryContainer = document.getElementById('fifoSummaryContainer');
+const fifoSummaryBody = document.getElementById('fifoSummaryTable').querySelector('tbody');
 
 function showToast(msg,type='error',ms=2500){
     toastEl.textContent=msg;
@@ -328,7 +332,8 @@ form.addEventListener('submit', async (e) => {
     transactionsOutgoingEl.textContent = 'Loading...';
     transactionsIncomingEl.textContent = 'Loading...';
     tokensTableBody.innerHTML = '<tr><td colspan="7">Loading...</td></tr>';
-    fifoResults.style.display = 'none';
+    fifoSalesContainer.style.display = 'none';
+    fifoSummaryContainer.style.display = 'none';
 
     const fifoChecked = document.getElementById('fifoCheckbox').checked;
     const walletEls = [...walletInputs.querySelectorAll('input[name="wallet"], input[name="wallets"]')];
@@ -440,17 +445,15 @@ form.addEventListener('submit', async (e) => {
                     });
 
                     if (fifoChecked && (res.total_holdings || res.sales)) {
-                        fifoResults.style.display = 'block';
-                        fifoResults.innerHTML = '';
+                        fifoSalesContainer.style.display = 'block';
+                        fifoSalesContainer.innerHTML = '<strong>FIFO Sales:</strong>';
 
-                        const holdings = res.total_holdings || {};
-                        const salesRaw = res.sales || {};
                         const salesList = [];
-                        if (Array.isArray(salesRaw)) {
-                            salesRaw.forEach(s => salesList.push({ ...s }));
-                        } else if (salesRaw && typeof salesRaw === 'object') {
-                            for (const token in salesRaw) {
-                                (salesRaw[token] || []).forEach(s => salesList.push({ token, ...s }));
+                        if (Array.isArray(res.sales)) {
+                            res.sales.forEach(s => salesList.push({ ...s }));
+                        } else if (res.sales && typeof res.sales === 'object') {
+                            for (const token in res.sales) {
+                                (res.sales[token] || []).forEach(s => salesList.push({ token, ...s }));
                             }
                         }
 
@@ -464,7 +467,6 @@ form.addEventListener('submit', async (e) => {
                             table.style.border = '1px solid #ccc';
                             table.innerHTML = `
                                 <thead style="background:#f4f4f4;border-bottom:1px solid #ccc;">
-                                    <tr><th colspan="${headers.length}" style="text-align:left;padding:8px 4px;">${title}</th></tr>
                                     <tr>${headers.map(h => `<th style="padding:4px;border-bottom:1px solid #ccc;text-align:left;">${h}</th>`).join('')}</tr>
                                 </thead>
                                 <tbody></tbody>
@@ -472,17 +474,11 @@ form.addEventListener('submit', async (e) => {
                             return table;
                         };
 
-                        const fifoTable = makeTable('FIFO Sales', [
-                            'Token',
-                            'Buy Datetime',
-                            'Sell Datetime',
-                            'Buy Price (EUR)',
-                            'Sell Price (EUR)',
-                            'Amount',
-                            'Profit (EUR)'
+                        const salesTable = makeTable('FIFO Sales', [
+                            'Token', 'Buy Datetime', 'Sell Datetime', 'Buy Price (EUR)', 'Sell Price (EUR)', 'Amount', 'Profit (EUR)'
                         ]);
-                        fifoResults.appendChild(fifoTable);
-                        const body = fifoTable.querySelector('tbody');
+                        fifoSalesContainer.appendChild(salesTable);
+                        const salesBody = salesTable.querySelector('tbody');
 
                         salesList.sort((a, b) => num(a.timestamp_sell) - num(b.timestamp_sell));
 
@@ -504,17 +500,11 @@ form.addEventListener('submit', async (e) => {
                                 <td style="padding:4px;border-bottom:1px solid #eee;">${amt.toFixed(6)}</td>
                                 <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
                             `;
-                            body.appendChild(row);
+                            salesBody.appendChild(row);
                         }
 
-                        const summaryTable = makeTable('FIFO Summary', [
-                            'Token',
-                            'Sold Amount',
-                            'Sold Value (EUR)',
-                            'Profit (EUR)'
-                        ]);
-                        fifoResults.appendChild(summaryTable);
-                        const sbody = summaryTable.querySelector('tbody');
+                        fifoSummaryContainer.style.display = 'block';
+                        fifoSummaryBody.innerHTML = '';
 
                         const tokens = new Set(salesList.map(s => s.token));
 
@@ -537,7 +527,7 @@ form.addEventListener('submit', async (e) => {
                                 <td style="padding:4px;border-bottom:1px solid #eee;">€${soldVal.toFixed(4)}</td>
                                 <td style="padding:4px;border-bottom:1px solid #eee;">€${profit.toFixed(4)}</td>
                             `;
-                            sbody.appendChild(row);
+                            fifoSummaryBody.appendChild(row);
                         }
 
                         const totalProfit = Array.from(tokens).reduce((sum, token) => {
@@ -557,21 +547,21 @@ form.addEventListener('submit', async (e) => {
                             <td colspan="3" style="padding:4px;border-top:2px solid #000;font-weight:bold;">Total Profit</td>
                             <td style="padding:4px;border-top:2px solid #000;font-weight:bold;">€${totalProfit.toFixed(4)}</td>
                         `;
-                        sbody.appendChild(totalProfitRow);
+                        fifoSummaryBody.appendChild(totalProfitRow);
 
                         const gasFeesRow = document.createElement('tr');
                         gasFeesRow.innerHTML = `
                             <td colspan="3" style="padding:4px;font-weight:bold;">Gas Fees Paid</td>
                             <td style="padding:4px;font-weight:bold;">€${gasFeesEur.toFixed(4)}</td>
                         `;
-                        sbody.appendChild(gasFeesRow);
+                        fifoSummaryBody.appendChild(gasFeesRow);
 
                         const walletProfitRow = document.createElement('tr');
                         walletProfitRow.innerHTML = `
                             <td colspan="3" style="padding:4px;font-weight:bold;">Total Wallet Profit for Period</td>
                             <td style="padding:4px;font-weight:bold;">€${totalWalletProfit.toFixed(4)}</td>
                         `;
-                        sbody.appendChild(walletProfitRow);
+                        fifoSummaryBody.appendChild(walletProfitRow);
                     }
 
                     transactionsOutgoingEl.textContent = Array.isArray(res.outgoing) && res.outgoing.length ? JSON.stringify(res.outgoing, null, 2) : 'No outgoing transactions';
@@ -605,6 +595,7 @@ form.addEventListener('submit', async (e) => {
         tokensTableBody.innerHTML = '<tr><td colspan="7">No data</td></tr>';
         fifoResults.style.display='none';
         console.error(err);
+        showToast('Request failed');
     }
 });
 </script>
