@@ -301,15 +301,12 @@ const addWalletBtn = document.getElementById('addWalletBtn');
 
 multiWalletCheckbox.addEventListener('change', () => {
     if (multiWalletCheckbox.checked) {
-        // Show add wallet button and replace single wallet input with first wallets field
         addWalletBtn.style.display = 'inline-block';
-        // clear and add the first wallet input but name it "wallets"
         walletInputs.innerHTML = '';
         const label = document.createElement('label');
         label.innerHTML = `<input type="text" name="wallets" placeholder="Wallet Address" required />`;
         walletInputs.appendChild(label);
     } else {
-        // hide add wallet button and restore single wallet input exactly as before
         addWalletBtn.style.display = 'none';
         walletInputs.innerHTML = `<label><input type="text" name="wallet" placeholder="Wallet Address" required /></label>`;
     }
@@ -317,7 +314,6 @@ multiWalletCheckbox.addEventListener('change', () => {
 
 addWalletBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    // append another wallets input (name="wallets")
     const label = document.createElement('label');
     label.innerHTML = `<input type="text" name="wallets" placeholder="Wallet Address" required />`;
     walletInputs.appendChild(label);
@@ -335,8 +331,6 @@ form.addEventListener('submit', async (e) => {
     fifoResults.style.display = 'none';
 
     const fifoChecked = document.getElementById('fifoCheckbox').checked;
-
-    // Gather all wallet inputs regardless of multi-wallet mode
     const walletEls = [...walletInputs.querySelectorAll('input[name="wallet"], input[name="wallets"]')];
     const wallets = walletEls.map(i => (i.value || '').trim()).filter(Boolean);
     if (wallets.length === 0) {
@@ -344,7 +338,6 @@ form.addEventListener('submit', async (e) => {
         return;
     }
 
-    // Always send a single param 'wallets' as comma-separated
     const params = new URLSearchParams();
     params.set('wallets', wallets.join(','));
     params.set('start_date', form.querySelector('input[name="start_date"]').value);
@@ -452,7 +445,6 @@ form.addEventListener('submit', async (e) => {
 
                         const holdings = res.total_holdings || {};
                         const salesRaw = res.sales || {};
-
                         const salesList = [];
                         if (Array.isArray(salesRaw)) {
                             salesRaw.forEach(s => salesList.push({ ...s }));
@@ -547,6 +539,39 @@ form.addEventListener('submit', async (e) => {
                             `;
                             sbody.appendChild(row);
                         }
+
+                        const totalProfit = Array.from(tokens).reduce((sum, token) => {
+                            const soldRows = salesList.filter(s => s.token === token);
+                            return sum + soldRows.reduce((a, s) => {
+                                const b = num(s.value_buy_eur);
+                                const c = num(s.value_sell_eur);
+                                return a + ((c && b) ? (c - b) : 0);
+                            }, 0);
+                        }, 0);
+
+                        const gasFeesEur = res.total_gas_eur ?? 0;
+                        const totalWalletProfit = totalProfit - gasFeesEur;
+
+                        const totalProfitRow = document.createElement('tr');
+                        totalProfitRow.innerHTML = `
+                            <td colspan="3" style="padding:4px;border-top:2px solid #000;font-weight:bold;">Total Profit</td>
+                            <td style="padding:4px;border-top:2px solid #000;font-weight:bold;">€${totalProfit.toFixed(4)}</td>
+                        `;
+                        sbody.appendChild(totalProfitRow);
+
+                        const gasFeesRow = document.createElement('tr');
+                        gasFeesRow.innerHTML = `
+                            <td colspan="3" style="padding:4px;font-weight:bold;">Gas Fees Paid</td>
+                            <td style="padding:4px;font-weight:bold;">€${gasFeesEur.toFixed(4)}</td>
+                        `;
+                        sbody.appendChild(gasFeesRow);
+
+                        const walletProfitRow = document.createElement('tr');
+                        walletProfitRow.innerHTML = `
+                            <td colspan="3" style="padding:4px;font-weight:bold;">Total Wallet Profit for Period</td>
+                            <td style="padding:4px;font-weight:bold;">€${totalWalletProfit.toFixed(4)}</td>
+                        `;
+                        sbody.appendChild(walletProfitRow);
                     }
 
                     transactionsOutgoingEl.textContent = Array.isArray(res.outgoing) && res.outgoing.length ? JSON.stringify(res.outgoing, null, 2) : 'No outgoing transactions';
