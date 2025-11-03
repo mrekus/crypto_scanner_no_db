@@ -226,8 +226,8 @@ button:hover{background:var(--accent-hover);}
 
     <div style="margin-top:40px; width:100%; max-width:800px; display:flex; flex-direction:column; gap:12px;">
         <label for="aiPrompt"></label><textarea id="aiPrompt" placeholder="Enter prompt here..." style="padding:16px; border-radius:12px; border:1px solid #ccc; width:100%; resize:vertical; min-height:80px;"></textarea>
-    <button type="button" id="sendAiBtn">Send to AI</button>
-    <div id="aiResponse" class="transactions" style="background:#222; color:#0f0; min-height:60px;"></div>
+    <button type="button" id="sendAiBtn">Ask AI</button>
+    <div id="aiResponse" class="transactions" style="whitespace: pre-wrap; font-family: monospace; overflow-wrap: break-word; background:#222; color:#0f0; min-height:60px;"></div>
 </div>
 
 </div>
@@ -616,7 +616,7 @@ sendAiBtn.addEventListener('click', async () => {
     const prompt = aiPromptEl.value.trim();
     if (!prompt) return;
 
-    aiResponseEl.textContent = 'Loading...';
+    aiResponseEl.textContent = 'Thinking...';
 
     try {
         const response = await fetch('/ai', {
@@ -625,7 +625,12 @@ sendAiBtn.addEventListener('click', async () => {
             body: JSON.stringify({ prompt, context: window.lastWalletResult || {} })
         });
         const data = await response.json();
-        aiResponseEl.textContent = data.response || 'No response';
+        const text = data.response || 'No response';
+
+        aiResponseEl.innerHTML = text
+            .replace(/\n/g, '<br>')
+            .replace(/^- /gm, '• ');
+
     } catch (err) {
         aiResponseEl.textContent = 'Error: ' + err.message;
     }
