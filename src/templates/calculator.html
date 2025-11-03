@@ -223,6 +223,13 @@ button:hover{background:var(--accent-hover);}
         <div><strong id="incomingHeader">Incoming Transactions:</strong></div>
         <div class="transactions" id="transactionsIncoming">No data</div>
     </div>
+
+    <div style="margin-top:40px; width:100%; max-width:800px; display:flex; flex-direction:column; gap:12px;">
+        <label for="aiPrompt"></label><textarea id="aiPrompt" placeholder="Enter prompt here..." style="padding:16px; border-radius:12px; border:1px solid #ccc; width:100%; resize:vertical; min-height:80px;"></textarea>
+    <button type="button" id="sendAiBtn">Send to AI</button>
+    <div id="aiResponse" class="transactions" style="background:#222; color:#0f0; min-height:60px;"></div>
+</div>
+
 </div>
 
 <div id="toast" class="toast"></div>
@@ -363,6 +370,7 @@ form.addEventListener('submit', async (e) => {
                 }
                 if(data.type === 'result'){
                     const res = data.data;
+                    window.lastWalletResult = res; // store result for AI
                     const tz = form.querySelector('select[name="timezone"]').value || 'UTC';
                     const startEth = res.starting_balance?.eth ?? 0;
                     const startEur = res.starting_balance?.eur ?? 0;
@@ -593,11 +601,36 @@ form.addEventListener('submit', async (e) => {
         transactionsIncomingEl.textContent='No data';
         transactionsOutgoingEl.textContent='No data';
         tokensTableBody.innerHTML = '<tr><td colspan="7">No data</td></tr>';
-        fifoResults.style.display='none';
+        fifoSalesContainer.style.display='none';
+        fifoSummaryContainer.style.display='none';
         console.error(err);
         showToast('Request failed');
     }
 });
+
+const aiPromptEl = document.getElementById('aiPrompt');
+const aiResponseEl = document.getElementById('aiResponse');
+const sendAiBtn = document.getElementById('sendAiBtn');
+
+sendAiBtn.addEventListener('click', async () => {
+    const prompt = aiPromptEl.value.trim();
+    if (!prompt) return;
+
+    aiResponseEl.textContent = 'Loading...';
+
+    try {
+        const response = await fetch('/ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, context: window.lastWalletResult || {} })
+        });
+        const data = await response.json();
+        aiResponseEl.textContent = data.response || 'No response';
+    } catch (err) {
+        aiResponseEl.textContent = 'Error: ' + err.message;
+    }
+});
+
 </script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from starlette.middleware.sessions import SessionMiddleware
 
-from apps import default, calculator
+from apps import default, calculator, openai
 from apps.authentication import login, register
 from conf import cfg
 
@@ -19,3 +19,4 @@ app.include_router(login.router)
 app.include_router(register.router)
 app.include_router(default.router)
 app.include_router(calculator.router)
+app.include_router(openai.router)
