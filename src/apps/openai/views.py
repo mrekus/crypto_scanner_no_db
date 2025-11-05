@@ -20,7 +20,7 @@ async def ai_endpoint(req: AIRequest):
 
     instructions = f'''
     You receive on-chain analysis results in JSON. Fulfill the user prompt strictly using the provided data. Provide a concise, structured, human-readable summary. 
-    Use bullet points, tables, or short paragraphs. 
+    Use (where appropriate) bullet points, tables, or short paragraphs. 
     Do NOT ask follow-up questions, speculate, or provide advice beyond the data. 
     Limit response length to the key metrics and insights.
     Round numbers to about 2 decimal places, or whatever makes sense.
