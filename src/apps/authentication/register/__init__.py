@@ -1,1 +1,0 @@
-from apps.authentication.register.views import router

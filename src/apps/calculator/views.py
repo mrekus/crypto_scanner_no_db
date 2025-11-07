@@ -1,20 +1,16 @@
-from typing import List, Optional
+from typing import List
 
-from fastapi import APIRouter, Depends, Request, Query
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi import APIRouter, Request, Query
+from fastapi.responses import StreamingResponse
 import json
 
 from apps.networks.ethereum.calculator import WalletAnalyzer
 from conf import cfg
-from models.users import User
-from utils.utils import require_user
 
 router = APIRouter()
 
 @router.get('/calculator')
-async def calculator_page(request: Request, user: User = Depends(require_user)):
-    if isinstance(user, HTMLResponse):
-        return user
+async def calculator_page(request: Request):
     return cfg.templates.TemplateResponse('calculator.html', {'request': request})
 
 
@@ -25,10 +21,7 @@ async def check(
     end_date: str = None,
     timezone: str = 'UTC',
     fifo: bool = False,
-    user: User = Depends(require_user)
 ):
-    # if isinstance(user, HTMLResponse):
-    #     return user
     wallets = [w.strip() for w in wallets[0].split(',')]
 
     async def event_generator():

@@ -1,7 +1,6 @@
 import asyncio
 import json
 from collections import defaultdict
-from pathlib import Path
 
 from async_lru import alru_cache
 
@@ -10,7 +9,6 @@ from zoneinfo import ZoneInfo
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-from conf import cfg
 from utils.utils import load_json_file
 
 
