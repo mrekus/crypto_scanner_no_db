@@ -1,8 +1,8 @@
 from fastapi import FastAPI
+from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from apps import default, calculator, openai
-from apps.authentication import login, register
 from conf import cfg
 
 
@@ -15,8 +15,14 @@ app = FastAPI(
 
 app.add_middleware(SessionMiddleware, secret_key=cfg.SESSION_SECRET_KEY)
 
-app.include_router(login.router)
-app.include_router(register.router)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=['*'],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(default.router)
 app.include_router(calculator.router)
 app.include_router(openai.router)

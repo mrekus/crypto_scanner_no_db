@@ -1,15 +1,12 @@
-from fastapi import APIRouter, Request, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request
 from starlette.responses import HTMLResponse
 
 from conf import cfg
-from core.database import get_db
-from utils.utils import get_current_user
+
 
 router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
-def home(request: Request, db: Session = Depends(get_db)):
-    user = get_current_user(request, db)
+def home(request: Request):
 
-    return cfg.templates.TemplateResponse("index.html", {"request": request, "user": user})
+    return cfg.templates.TemplateResponse("index.html", {"request": request})
