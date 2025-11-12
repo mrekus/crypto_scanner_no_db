@@ -5,7 +5,7 @@ from core.app import app
 
 
 def run_server():
-    uvicorn.run(app, host='0.0.0.0', port=cfg.port, reload=False)
+    uvicorn.run(app, host=cfg.host, port=cfg.port, reload=False)
 
 
 if __name__ == "__main__":

@@ -11,11 +11,13 @@ from typing import Dict, Any, List
 
 from utils.utils import load_json_file
 
+from conf import cfg
+
 
 class WalletAnalyzer:
     def __init__(self):
-        self.ALCHEMY_API_KEY = 'h0thIy2074uqSGR-dPOtC'
-        self.CG_API_KEY = 'CG-kbf7rFt27G6XBe2jekbqr3zY'
+        self.ALCHEMY_API_KEY = cfg.ALCHEMY_API_KEY
+        self.CG_API_KEY = cfg.CG_API_KEY
         self.URL_API = f'https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}'
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
         self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'

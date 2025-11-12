@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from openai import OpenAI
 from pydantic import BaseModel
 
+from conf import cfg
+
 router = APIRouter()
 
 
@@ -15,7 +17,7 @@ class AIRequest(BaseModel):
 @router.post('/ai')
 async def ai_endpoint(req: AIRequest):
     client = OpenAI(
-        api_key='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'
+        api_key=cfg.OPENAI_API_KEY,
     )
 
     instructions = f'''

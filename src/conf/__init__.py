@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from pydantic.v1 import BaseSettings
@@ -9,8 +10,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     app_name = 'crypto_scanner'
     debug = True
-    host = 'localhost'
-    port = 8000
+    host = '0.0.0.0'
+    port = int(os.getenv("PORT"))
+    ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY")
+    CG_API_KEY = os.getenv("CG_API_KEY")
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
     templates = Jinja2Templates(directory=str(BASE_DIR / 'templates'))
     
