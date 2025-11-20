@@ -387,7 +387,8 @@ class WalletAnalyzer:
             }
             token_price_maps = await self.fetch_token_prices_in_batches(client, tx_contracts, genesis_ts, end_ts,
                                                                         batch_size=3, pause=1.0, headers=headers)
-            tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in combined_transfers_outgoing]
+            tasks = [self.fetch_gas_fee(client, tx['hash']) for tx in combined_transfers_outgoing if
+                     int(datetime.strptime(tx['metadata']['blockTimestamp'], '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()) >= start_ts]
             gas_fees_eth = await asyncio.gather(*tasks)
             total_gas_eur = 0
             for tx, fee in zip(combined_transfers_outgoing, gas_fees_eth):
