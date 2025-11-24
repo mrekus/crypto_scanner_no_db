@@ -4,6 +4,8 @@ from fastapi import APIRouter, Request, Query
 from fastapi.responses import StreamingResponse
 import json
 
+from starlette.responses import Response
+
 from apps.networks.ethereum.calculator import WalletAnalyzer
 from conf import cfg
 
@@ -47,9 +49,29 @@ async def check(
                 'sales': result['sales'],
             }
 
-            yield f"data: {json.dumps({'type': 'result', 'data': payload})}\n\n"
+            yield f'data: {json.dumps({'type': 'result', 'data': payload})}\n\n'
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n"
+            yield f'data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n'
 
-    return StreamingResponse(event_generator(), media_type='text/event-stream')
+    return StreamingResponse(
+        event_generator(),
+        media_type='text/event-stream',
+        headers={
+            'Access-Control-Allow-Origin': cfg.CORS_ENDPOINT,
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        }
+    )
+
+
+@router.options('/check')
+async def check_options():
+    return Response(
+        headers={
+            'Access-Control-Allow-Origin': cfg.CORS_ORIGIN,
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type',
+        }
+    )
+    

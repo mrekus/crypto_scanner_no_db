@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     ALCHEMY_API_KEY = os.getenv("ALCHEMY_API_KEY")
     CG_API_KEY = os.getenv("CG_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    CORS_ENDPOINT = 'https://strategylabs-wixsite-com.filesusr.com'
 
     templates = Jinja2Templates(directory=str(BASE_DIR / 'templates'))
     
