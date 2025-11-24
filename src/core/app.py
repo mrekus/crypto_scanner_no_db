@@ -17,8 +17,8 @@ app.add_middleware(SessionMiddleware, secret_key=cfg.SESSION_SECRET_KEY)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
-    allow_credentials=False,
+    allow_origins=["https://strategylabs.wixsite.com"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
