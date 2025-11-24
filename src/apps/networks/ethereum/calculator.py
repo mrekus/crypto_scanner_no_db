@@ -25,7 +25,7 @@ class WalletAnalyzer:
         self.token_metadata_path = 'apps/networks/ethereum/token_metadata.json'
         self.token_metadata = load_json_file(self.token_metadata_path)
 
-        self.semaphore = asyncio.Semaphore(3)
+        self.semaphore = asyncio.Semaphore(8)
 
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
@@ -331,7 +331,7 @@ class WalletAnalyzer:
             end_ts = int(end_dt.timestamp())
             # TODO: change to genesis ts with non demo coingecko api
             # genesis_ts = 0
-            one_year_from_now = datetime.now(tz=tz) - timedelta(days=365)
+            one_year_from_now = datetime.now(tz=tz) - timedelta(days=729)
             genesis_ts = int(one_year_from_now.timestamp())
 
             start_block = await self.get_block_by_timestamp(client, start_ts)
