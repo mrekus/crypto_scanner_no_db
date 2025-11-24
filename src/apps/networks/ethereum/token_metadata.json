@@ -226,5 +226,17 @@
     "logo": "https://static.alchemyapi.io/images/assets/4943.png",
     "name": "Dai",
     "symbol": "DAI"
+  },
+  "0x33cf519030235f75a13f29afcff5d6ff4fd10350": {
+    "decimals": 18,
+    "logo": "https://static.alchemyapi.io/images/assets/22821.png",
+    "name": "PEPE.bet",
+    "symbol": "PEPEBET"
+  },
+  "0x6182c934748cae5f265dc0b2e126e3c86430f06e": {
+    "decimals": 18,
+    "logo": null,
+    "name": "Visit website launchpepe .com to claim rewards",
+    "symbol": "Visit website launchpepe .com to claim rewards"
   }
 }

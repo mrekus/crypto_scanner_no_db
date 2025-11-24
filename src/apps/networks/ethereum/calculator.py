@@ -20,12 +20,12 @@ class WalletAnalyzer:
         self.CG_API_KEY = cfg.CG_API_KEY
         self.URL_API = f'https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}'
         self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
-        self.CG_PRICE_RANGE_URL = 'https://api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
+        self.CG_PRICE_RANGE_URL = 'https://pro-api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
         self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
         self.token_metadata_path = 'apps/networks/ethereum/token_metadata.json'
         self.token_metadata = load_json_file(self.token_metadata_path)
 
-        self.semaphore = asyncio.Semaphore(8)
+        # self.semaphore = asyncio.Semaphore(8)
 
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
@@ -178,15 +178,7 @@ class WalletAnalyzer:
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            cleaned = {}
-            for ts, price in resp.json().get('prices', []):
-                if isinstance(price, list):
-                    if price:
-                        price = price[0]
-                    else:
-                        continue
-                cleaned[int(ts / 1000)] = float(price)
-            return cleaned
+            return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
 
         except Exception:
             return None
@@ -210,12 +202,12 @@ class WalletAnalyzer:
         ]
 
         async def fetch_one(contract, cg_id):
-            async with self.semaphore:
-                try:
-                    return contract, await self.get_token_prices(client, cg_id, start_ts, end_ts, headers=headers)
-                except Exception as e:
-                    print(f'Failed to fetch {contract}: {e}')
-                    return contract, None
+            # async with self.semaphore:
+            try:
+                return contract, await self.get_token_prices(client, cg_id, start_ts, end_ts, headers=headers)
+            except Exception as e:
+                print(f'Failed to fetch {contract}: {e}')
+                return contract, None
 
         for i in range(0, len(valid_contracts), batch_size):
             batch = valid_contracts[i:i + batch_size]
@@ -384,7 +376,7 @@ class WalletAnalyzer:
                 combined_transfers_outgoing.extend(transfers_outgoing)
                 combined_transfers_incoming.extend(transfers_incoming)
 
-            headers = {'x-cg-demo-api-key': self.CG_API_KEY}
+            headers = {'x-cg-pro-api-key': self.CG_API_KEY}
             eth_resp = await client.get(self.CG_PRICE_RANGE_URL.format(token_id='ethereum'), headers=headers, params={'vs_currency': 'eur', 'from': genesis_ts, 'to': end_ts})
             eth_price_map = {int(ts / 1000): price for ts, price in eth_resp.json().get('prices', [])}
 
@@ -484,5 +476,5 @@ class WalletAnalyzer:
 
 # WALLET = '0xa9B21B41fC68A14eaA984581dDD0b31641bF287a'
 # analyzer = WalletAnalyzer()
-# result = asyncio.run(analyzer.run(WALLET, '2025-10-01', '2025-10-06', fifo=True))
-# # print(json.dumps(result, indent=2))
+# result = asyncio.run(analyzer.run([WALLET], '2025-10-01', '2025-10-06', fifo=True))
+# print(json.dumps(result, indent=2))
