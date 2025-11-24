@@ -178,7 +178,15 @@ class WalletAnalyzer:
             if resp.status_code == 404:
                 return None
             resp.raise_for_status()
-            return {int(ts / 1000): price for ts, price in resp.json().get('prices', [])}
+            cleaned = {}
+            for ts, price in resp.json().get('prices', []):
+                if isinstance(price, list):
+                    if price:
+                        price = price[0]
+                    else:
+                        continue
+                cleaned[int(ts / 1000)] = float(price)
+            return cleaned
 
         except Exception:
             return None
