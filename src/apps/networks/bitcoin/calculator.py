@@ -1,9 +1,10 @@
 import asyncio
+import random
+
 import httpx
-import json
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
+import json
 from conf import cfg
 
 
@@ -11,9 +12,10 @@ class BitcoinAnalyzer:
     def __init__(self):
         self.MAESTRO_API_KEY = cfg.MAESTRO_API_KEY
         self.CG_API_KEY = cfg.CG_API_KEY
-
         self.URL_MAESTRO = cfg.MAESTRO_API_URL
         self.CG_PRICE_RANGE_URL = "https://pro-api.coingecko.com/api/v3/coins/{token_id}/market_chart/range"
+
+        self.semaphore = asyncio.Semaphore(5)
 
     async def get_block_by_timestamp(self, client: httpx.AsyncClient, ts: int) -> int:
         headers = {"api-key": self.MAESTRO_API_KEY}
@@ -23,23 +25,76 @@ class BitcoinAnalyzer:
         r.raise_for_status()
         return r.json()["data"]["height"]
 
-    async def get_utxos_at_height(self, client: httpx.AsyncClient, address: str, height: int):
+    async def get_all_txs(self, client: httpx.AsyncClient, address: str, batch_size=1000):
         headers = {"api-key": self.MAESTRO_API_KEY}
-        params = {"height": height}
-        r = await client.get(f"{self.URL_MAESTRO}/addresses/{address}/utxos", headers=headers, params=params)
-        r.raise_for_status()
-        return r.json()["data"]
+        url = f"{self.URL_MAESTRO}/addresses/{address}/txs"
+        offset = 0
+        all_txs = []
 
-    async def get_balance_at_height(self, client: httpx.AsyncClient, address: str, height: int) -> float:
-        utxos = await self.get_utxos_at_height(client, address, height)
-        total_sats = sum(int(u["satoshis"]) for u in utxos)
-        return total_sats / 1e8
+        while True:
+            params = {"limit": batch_size, "offset": offset}
+            r = await client.get(url, headers=headers, params=params)
+            r.raise_for_status()
+            data = r.json().get("data", [])
+            if not data:
+                break
+            all_txs.extend(data)
+            if len(data) < batch_size:
+                break
+            offset += batch_size
+
+        return all_txs
+
+    async def get_full_tx(self, client: httpx.AsyncClient, tx_hash: str):
+        headers = {"api-key": self.MAESTRO_API_KEY}
+        url = f"{self.URL_MAESTRO}/transactions/{tx_hash}"
+        retries = 3
+        backoff = 1
+
+        async with self.semaphore:
+            for _ in range(retries):
+                r = await client.get(url, headers=headers)
+                if r.status_code == 200:
+                    return r.json()["data"]
+                if r.status_code == 429:
+                    await asyncio.sleep(backoff + random.random())
+                    backoff *= 2
+                    continue
+                r.raise_for_status()
+        raise Exception(f"Failed to fetch tx {tx_hash} after {retries} retries")
+
+    async def reconstruct_utxo_set(self, client: httpx.AsyncClient, address: str, txs: list, up_to_height: int):
+        utxos = {}
+        for tx_summary in txs:
+            height = tx_summary.get("height")
+            if height is None or height > up_to_height:
+                continue
+
+            full_tx = await self.get_full_tx(client, tx_summary["tx_hash"])
+            txid = tx_summary["tx_hash"]
+
+            for idx, out in enumerate(full_tx.get("outputs", [])):
+                if out.get("address") == address:
+                    utxos[f'{txid}:{idx}'] = int(out["satoshis"])
+
+            for inp in full_tx.get("inputs", []):
+                if inp.get("address") == address:
+                    key = f'{inp["txid"]}:{inp["vout"]}'  # matches the input format in full_tx
+                    utxos.pop(key, None)
+
+        return utxos
+
+    async def get_balance_at_height(self, client: httpx.AsyncClient, address: str, height: int):
+        txs = await self.get_all_txs(client, address)
+        print(txs)
+        utxos = await self.reconstruct_utxo_set(client, address, txs, height)
+        print(utxos)
+        return sum(utxos.values()) / 1e8
 
     async def get_price_map(self, client: httpx.AsyncClient, start_ts: int, end_ts: int):
         url = self.CG_PRICE_RANGE_URL.format(token_id="bitcoin")
         params = {"vs_currency": "eur", "from": start_ts, "to": end_ts}
         headers = {"x-cg-pro-api-key": self.CG_API_KEY}
-
         r = await client.get(url, params=params, headers=headers)
         r.raise_for_status()
         return {int(t / 1000): p for t, p in r.json().get("prices", [])}
@@ -52,27 +107,21 @@ class BitcoinAnalyzer:
         return price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
 
     async def run(self, address: str, start_date: str, end_date: str, timezone="UTC"):
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             tz = ZoneInfo(timezone)
-
-            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
-                hour=0, minute=0, second=0, tzinfo=tz
-            )
-            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
-                hour=0, minute=0, second=0, tzinfo=tz
-            ) + timedelta(days=1)
-
-            start_ts = int(start_dt.timestamp())
-            end_ts = int(end_dt.timestamp())
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, tzinfo=tz)
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(hour=0, minute=0, second=0, tzinfo=tz) + timedelta(days=1)
+            start_ts, end_ts = int(start_dt.timestamp()), int(end_dt.timestamp())
 
             start_height = await self.get_block_by_timestamp(client, start_ts)
             end_height = await self.get_block_by_timestamp(client, end_ts)
 
-            bal_start = await self.get_balance_at_height(client, address, start_height)
-            bal_end = await self.get_balance_at_height(client, address, end_height)
+            bal_start, bal_end = await asyncio.gather(
+                self.get_balance_at_height(client, address, start_height),
+                self.get_balance_at_height(client, address, end_height)
+            )
 
             price_map = await self.get_price_map(client, start_ts, end_ts)
-
             price_start = self.map_price(price_map, start_ts)
             price_end = self.map_price(price_map, end_ts)
 
@@ -88,6 +137,10 @@ class BitcoinAnalyzer:
             }
 
 
-# analyzer = BitcoinAnalyzer()
-# result = asyncio.run(analyzer.run("bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n", "2025-11-21", "2025-11-23"))
-# print(json.dumps(result, indent=2))
+analyzer = BitcoinAnalyzer()
+result = asyncio.run(analyzer.run(
+    "bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n",
+    "2025-11-22",
+    "2025-11-24"
+))
+print(json.dumps(result, indent=2))
