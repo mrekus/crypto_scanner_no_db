@@ -439,6 +439,7 @@ class WalletAnalyzer:
 
             sales = None
             total_holdings = None
+
             if fifo:
                 wallet_set = set(w.lower() for w in wallets)
 
