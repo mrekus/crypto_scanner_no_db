@@ -45,7 +45,6 @@ async def check(
                 'total_gas_eur': result['total_gas_eur'],
                 'outgoing': result['transactions']['outgoing'],
                 'incoming': result['transactions']['incoming'],
-                'total_holdings': result['total_holdings'],
                 'sales': result['sales'],
             }
 

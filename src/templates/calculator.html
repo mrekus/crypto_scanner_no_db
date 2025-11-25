@@ -444,7 +444,7 @@ form.addEventListener('submit', async (e) => {
                         tokensTableBody.appendChild(row);
                     });
 
-                    if (fifoChecked && (res.total_holdings || res.sales)) {
+                    if (fifoChecked && res.sales) {
                         fifoSalesContainer.style.display = 'block';
                         fifoSalesContainer.innerHTML = '<strong>FIFO Sales:</strong>';
 
