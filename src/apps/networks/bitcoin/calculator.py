@@ -63,8 +63,12 @@ class BitcoinAnalyzer:
                 r.raise_for_status()
         raise Exception(f"Failed to fetch tx {tx_hash} after {retries} retries")
 
-    async def reconstruct_utxo_set(self, client: httpx.AsyncClient, address: str, txs: list, up_to_height: int):
+    async def reconstruct_utxo_set(self, client: httpx.AsyncClient, address: str, txs: list, up_to_height: int,
+                                   price_map: dict):
         utxos = {}
+        total_fees_btc = 0
+        total_fees_eur = 0
+
         for tx_summary in txs:
             height = tx_summary.get("height")
             if height is None or height > up_to_height:
@@ -79,17 +83,30 @@ class BitcoinAnalyzer:
 
             for inp in full_tx.get("inputs", []):
                 if inp.get("address") == address:
-                    key = f'{inp["txid"]}:{inp["vout"]}'  # matches the input format in full_tx
+                    key = f'{inp["txid"]}:{inp["vout"]}'
                     utxos.pop(key, None)
 
-        return utxos
+            input_sum = sum(
+                int(inp.get("satoshis", 0)) for inp in full_tx.get("inputs", []) if inp.get("address") == address)
+            output_sum = sum(int(out.get("satoshis", 0)) for out in full_tx.get("outputs", []))
+            if input_sum > 0:
+                fee_btc = max(input_sum - output_sum, 0) / 1e8
+                total_fees_btc += fee_btc
 
-    async def get_balance_at_height(self, client: httpx.AsyncClient, address: str, height: int):
+                ts_str = full_tx.get("timestamp")
+                if ts_str:
+                    dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                    ts = int(dt.timestamp())
+                    closest_price = price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
+                    total_fees_eur += fee_btc * closest_price
+
+        return utxos, total_fees_btc, total_fees_eur
+
+    async def get_balance_at_height(self, client: httpx.AsyncClient, address: str, height: int, price_map: dict):
         txs = await self.get_all_txs(client, address)
-        print(txs)
-        utxos = await self.reconstruct_utxo_set(client, address, txs, height)
-        print(utxos)
-        return sum(utxos.values()) / 1e8
+        utxos, fees_paid_btc, fees_paid_eur = await self.reconstruct_utxo_set(client, address, txs, height, price_map)
+        balance = sum(utxos.values()) / 1e8
+        return balance, fees_paid_btc, fees_paid_eur
 
     async def get_price_map(self, client: httpx.AsyncClient, start_ts: int, end_ts: int):
         url = self.CG_PRICE_RANGE_URL.format(token_id="bitcoin")
@@ -116,12 +133,16 @@ class BitcoinAnalyzer:
             start_height = await self.get_block_by_timestamp(client, start_ts)
             end_height = await self.get_block_by_timestamp(client, end_ts)
 
-            bal_start, bal_end = await asyncio.gather(
-                self.get_balance_at_height(client, address, start_height),
-                self.get_balance_at_height(client, address, end_height)
-            )
-
             price_map = await self.get_price_map(client, start_ts, end_ts)
+
+            (bal_start, fees_start_btc, fees_start_eur), (bal_end, fees_end_btc, fees_end_eur) = await asyncio.gather(
+                self.get_balance_at_height(client, address, start_height, price_map),
+                self.get_balance_at_height(client, address, end_height, price_map)
+            )
+            total_fees_btc = fees_end_btc - fees_start_btc
+            total_fees_eur = fees_end_eur - fees_start_eur
+
+
             price_start = self.map_price(price_map, start_ts)
             price_end = self.map_price(price_map, end_ts)
 
@@ -134,6 +155,8 @@ class BitcoinAnalyzer:
                 "end_height": end_height,
                 "price_start_eur": price_start,
                 "price_end_eur": price_end,
+                "fees_btc": total_fees_btc,
+                "fees_eur": total_fees_eur,
             }
 
 
