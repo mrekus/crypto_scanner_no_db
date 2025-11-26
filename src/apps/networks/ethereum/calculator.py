@@ -475,7 +475,7 @@ class WalletAnalyzer:
             }
 
 
-# WALLET = '0xa9B21B41fC68A14eaA984581dDD0b31641bF287a'
+# WALLET = '0x43BEd810F61173Df3E9AC386Bda593dcf8D25c4c'
 # analyzer = WalletAnalyzer()
-# result = asyncio.run(analyzer.run([WALLET], '2025-10-01', '2025-10-06', fifo=True))
+# result = asyncio.run(analyzer.run([WALLET], '2025-11-01', '2025-11-06', fifo=True))
 # print(json.dumps(result, indent=2))

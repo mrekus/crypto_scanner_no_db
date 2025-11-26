@@ -29,7 +29,7 @@ class BitcoinAnalyzer:
 
     async def get_all_txs(self, client: httpx.AsyncClient, address: str, batch_size=1000):
         headers = {'api-key': self.MAESTRO_API_KEY}
-        url = f'{self.URL_MAESTRO}/addresses/{address}/txs'
+        url = f'{self.URL_MAESTRO}/wallets/{address}/txs'
         offset = 0
         all_txs = []
 
@@ -67,9 +67,9 @@ class BitcoinAnalyzer:
         raise Exception(f'Failed to fetch tx {tx_hash} after {retries} retries')
 
 
-    async def get_all_txs_multi(self, client, addresses, batch_size=1000):
+    async def get_all_txs_multi(self, client, wallets, batch_size=1000):
         all_txs = []
-        for addr in addresses:
+        for addr in wallets:
             headers = {'api-key': self.MAESTRO_API_KEY}
             url = f'{self.URL_MAESTRO}/addresses/{addr}/txs'
             offset = 0
@@ -88,14 +88,15 @@ class BitcoinAnalyzer:
                 offset += batch_size
         return all_txs
 
-
-    async def reconstruct_utxo_set(self, client, addresses, txs, up_to_height, price_map, fifo=False):
+    async def reconstruct_utxo_set(self, client, wallets, txs, up_to_height, price_map, fifo=False):
         utxos = {}
         total_fees_btc = 0
         total_fees_eur = 0
 
         incoming = defaultdict(list)
         outgoing = defaultdict(list)
+        incoming_txs = []
+        outgoing_txs = []
 
         for tx_summary in txs:
             height = tx_summary.get('height')
@@ -112,8 +113,18 @@ class BitcoinAnalyzer:
                 ts = None
 
             for idx, out in enumerate(full_tx.get('outputs', [])):
-                if out.get('address') in addresses:
+                if out.get('address') in wallets:
                     utxos[f'{txid}:{idx}'] = int(out['satoshis'])
+                    tx_data = {
+                        'hash': txid,
+                        'to': out.get('address'),
+                        'from': full_tx.get('inputs', [{}])[0].get('address', 'unknown'),
+                        'amount': int(out['satoshis']) / 1e8,
+                        'timestamp': ts,
+                        'value_eur': (int(out['satoshis']) / 1e8 * price_map[
+                            min(price_map.keys(), key=lambda k: abs(k - ts))]) if ts else 'unknown',
+                    }
+                    incoming_txs.append(tx_data)
                     if fifo:
                         incoming['BTC'].append({
                             'amount': int(out['satoshis']) / 1e8,
@@ -122,9 +133,19 @@ class BitcoinAnalyzer:
                         })
 
             for inp in full_tx.get('inputs', []):
-                if inp.get('address') in addresses:
-                    key = f'{inp['txid']}:{inp['vout']}'
+                if inp.get('address') in wallets:
+                    key = f'{inp["txid"]}:{inp["vout"]}'
                     utxos.pop(key, None)
+                    tx_data = {
+                        'hash': txid,
+                        'from': inp.get('address'),
+                        'to': full_tx.get('outputs', [{}])[0].get('address', 'unknown'),
+                        'amount': int(inp['satoshis']) / 1e8,
+                        'timestamp': ts,
+                        'value_eur': (int(inp['satoshis']) / 1e8 * price_map[
+                            min(price_map.keys(), key=lambda k: abs(k - ts))]) if ts else 'unknown',
+                    }
+                    outgoing_txs.append(tx_data)
                     if fifo:
                         outgoing['BTC'].append({
                             'amount': int(inp['satoshis']) / 1e8,
@@ -133,7 +154,7 @@ class BitcoinAnalyzer:
                         })
 
             input_sum = sum(
-                int(inp.get('satoshis', 0)) for inp in full_tx.get('inputs', []) if inp.get('address') in addresses)
+                int(inp.get('satoshis', 0)) for inp in full_tx.get('inputs', []) if inp.get('address') in wallets)
             output_sum = sum(int(out.get('satoshis', 0)) for out in full_tx.get('outputs', []))
             if input_sum > 0:
                 fee_btc = max(input_sum - output_sum, 0) / 1e8
@@ -144,9 +165,10 @@ class BitcoinAnalyzer:
 
         sales = {}
         if fifo:
-            sales = self.calculate_fifo_sales(incoming, outgoing, start_ts=min(price_map.keys()), cutoff_ts=max(price_map.keys()))
+            sales = self.calculate_fifo_sales(incoming, outgoing, start_ts=min(price_map.keys()),
+                                              cutoff_ts=max(price_map.keys()))
 
-        return utxos, total_fees_btc, total_fees_eur, sales
+        return utxos, total_fees_btc, total_fees_eur, sales, incoming_txs, outgoing_txs
 
 
     @staticmethod
@@ -198,13 +220,13 @@ class BitcoinAnalyzer:
 
         return sales
 
-    async def get_balance_at_height(self, client: httpx.AsyncClient, addresses, height: int, price_map: dict, fifo=False):
-        txs = await self.get_all_txs_multi(client, addresses)
-        utxos, fees_btc, fees_eur, sales = await self.reconstruct_utxo_set(
-            client, addresses, txs, height, price_map, fifo=fifo
+    async def get_balance_at_height(self, client: httpx.AsyncClient, wallets, height: int, price_map: dict, fifo=False):
+        txs = await self.get_all_txs_multi(client, wallets)
+        utxos, fees_btc, fees_eur, sales, incoming_tx, outgoing_tx = await self.reconstruct_utxo_set(
+            client, wallets, txs, height, price_map, fifo=fifo
         )
         balance = sum(utxos.values()) / 1e8
-        return balance, fees_btc, fees_eur, sales
+        return balance, fees_btc, fees_eur, sales, incoming_tx, outgoing_tx
 
 
     async def get_price_map(self, client: httpx.AsyncClient, start_ts: int, end_ts: int):
@@ -224,7 +246,7 @@ class BitcoinAnalyzer:
         return price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
 
 
-    async def run(self, addresses, start_date, end_date, timezone='UTC', fifo=False):
+    async def run(self, wallets, start_date, end_date, timezone='UTC', fifo=False):
         async with httpx.AsyncClient(timeout=60) as client:
             tz = ZoneInfo(timezone)
             start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
@@ -238,10 +260,10 @@ class BitcoinAnalyzer:
             end_height = await self.get_block_by_timestamp(client, end_ts)
             price_map = await self.get_price_map(client, start_ts, end_ts)
 
-            (bal_start, fees_start_btc, fees_start_eur, _), (bal_end, fees_end_btc, fees_end_eur,
-                                                             sales) = await asyncio.gather(
-                self.get_balance_at_height(client, addresses, start_height, price_map, fifo=fifo),
-                self.get_balance_at_height(client, addresses, end_height, price_map, fifo=fifo),
+            (bal_start, fees_start_btc, fees_start_eur, _, incoming_tx, _), (bal_end, fees_end_btc, fees_end_eur,
+                                                             sales, _, outgoing_tx) = await asyncio.gather(
+                self.get_balance_at_height(client, wallets, start_height, price_map, fifo=fifo),
+                self.get_balance_at_height(client, wallets, end_height, price_map, fifo=fifo),
             )
 
             total_fees_btc = fees_end_btc - fees_start_btc
@@ -251,17 +273,24 @@ class BitcoinAnalyzer:
             price_end = self.map_price(price_map, end_ts)
 
             result = {
-                'starting_balance_btc': bal_start,
-                'ending_balance_btc': bal_end,
-                'starting_balance_eur': bal_start * price_start,
-                'ending_balance_eur': bal_end * price_end,
-                'start_height': start_height,
-                'end_height': end_height,
-                'price_start_eur': price_start,
-                'price_end_eur': price_end,
-                'fees_btc': total_fees_btc,
-                'fees_eur': total_fees_eur,
-                'sales': sales if fifo else None
+                'starting_balance': {
+                    'BTC': bal_start,
+                    'BTC_eur': bal_start * price_start,
+                    'tokens': {}
+                },
+                'ending_balance': {
+                    'BTC': bal_end,
+                    'BTC_eur': bal_end * price_end,
+                    'tokens': {}
+                },
+                'transactions': {
+                    'incoming': incoming_tx,
+                    'outgoing': outgoing_tx
+                },
+                'total_gas_btc': total_fees_btc,
+                'total_gas_eur': total_fees_eur,
+                'sales': sales if fifo else None,
+                'total_holdings': None
             }
 
             return result
