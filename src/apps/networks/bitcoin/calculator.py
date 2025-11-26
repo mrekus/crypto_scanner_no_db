@@ -67,8 +67,29 @@ class BitcoinAnalyzer:
         raise Exception(f'Failed to fetch tx {tx_hash} after {retries} retries')
 
 
-    async def reconstruct_utxo_set(self, client: httpx.AsyncClient, address: str, txs: list,
-                                   up_to_height: int, price_map: dict, fifo=False):
+    async def get_all_txs_multi(self, client, addresses, batch_size=1000):
+        all_txs = []
+        for addr in addresses:
+            headers = {'api-key': self.MAESTRO_API_KEY}
+            url = f'{self.URL_MAESTRO}/addresses/{addr}/txs'
+            offset = 0
+            while True:
+                params = {'limit': batch_size, 'offset': offset}
+                r = await client.get(url, headers=headers, params=params)
+                r.raise_for_status()
+                data = r.json().get('data', [])
+                if not data:
+                    break
+                for tx in data:
+                    tx['_origin_address'] = addr
+                all_txs.extend(data)
+                if len(data) < batch_size:
+                    break
+                offset += batch_size
+        return all_txs
+
+
+    async def reconstruct_utxo_set(self, client, addresses, txs, up_to_height, price_map, fifo=False):
         utxos = {}
         total_fees_btc = 0
         total_fees_eur = 0
@@ -91,7 +112,7 @@ class BitcoinAnalyzer:
                 ts = None
 
             for idx, out in enumerate(full_tx.get('outputs', [])):
-                if out.get('address') == address:
+                if out.get('address') in addresses:
                     utxos[f'{txid}:{idx}'] = int(out['satoshis'])
                     if fifo:
                         incoming['BTC'].append({
@@ -101,7 +122,7 @@ class BitcoinAnalyzer:
                         })
 
             for inp in full_tx.get('inputs', []):
-                if inp.get('address') == address:
+                if inp.get('address') in addresses:
                     key = f'{inp['txid']}:{inp['vout']}'
                     utxos.pop(key, None)
                     if fifo:
@@ -111,7 +132,8 @@ class BitcoinAnalyzer:
                             'price': price_map[min(price_map.keys(), key=lambda k: abs(k - ts))] if ts else 'unknown'
                         })
 
-            input_sum = sum(int(inp.get('satoshis', 0)) for inp in full_tx.get('inputs', []) if inp.get('address') == address)
+            input_sum = sum(
+                int(inp.get('satoshis', 0)) for inp in full_tx.get('inputs', []) if inp.get('address') in addresses)
             output_sum = sum(int(out.get('satoshis', 0)) for out in full_tx.get('outputs', []))
             if input_sum > 0:
                 fee_btc = max(input_sum - output_sum, 0) / 1e8
@@ -176,10 +198,11 @@ class BitcoinAnalyzer:
 
         return sales
 
-
-    async def get_balance_at_height(self, client: httpx.AsyncClient, address: str, height: int, price_map: dict, fifo=False):
-        txs = await self.get_all_txs(client, address)
-        utxos, fees_btc, fees_eur, sales = await self.reconstruct_utxo_set(client, address, txs, height, price_map, fifo=fifo)
+    async def get_balance_at_height(self, client: httpx.AsyncClient, addresses, height: int, price_map: dict, fifo=False):
+        txs = await self.get_all_txs_multi(client, addresses)
+        utxos, fees_btc, fees_eur, sales = await self.reconstruct_utxo_set(
+            client, addresses, txs, height, price_map, fifo=fifo
+        )
         balance = sum(utxos.values()) / 1e8
         return balance, fees_btc, fees_eur, sales
 
@@ -201,21 +224,24 @@ class BitcoinAnalyzer:
         return price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
 
 
-    async def run(self, address: str, start_date: str, end_date: str, timezone='UTC', fifo=False):
+    async def run(self, addresses, start_date, end_date, timezone='UTC', fifo=False):
         async with httpx.AsyncClient(timeout=60) as client:
             tz = ZoneInfo(timezone)
-            start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0, tzinfo=tz)
-            end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0, tzinfo=tz) + timedelta(days=1)
-            start_ts, end_ts = int(start_dt.timestamp()), int(end_dt.timestamp())
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d').replace(
+                hour=0, minute=0, second=0, tzinfo=tz)
+            end_dt = datetime.strptime(end_date, '%Y-%m-%d').replace(
+                hour=0, minute=0, second=0, tzinfo=tz) + timedelta(days=1)
+            start_ts = int(start_dt.timestamp())
+            end_ts = int(end_dt.timestamp())
 
             start_height = await self.get_block_by_timestamp(client, start_ts)
             end_height = await self.get_block_by_timestamp(client, end_ts)
-
             price_map = await self.get_price_map(client, start_ts, end_ts)
 
-            (bal_start, fees_start_btc, fees_start_eur, _), (bal_end, fees_end_btc, fees_end_eur, sales) = await asyncio.gather(
-                self.get_balance_at_height(client, address, start_height, price_map, fifo=fifo),
-                self.get_balance_at_height(client, address, end_height, price_map, fifo=fifo)
+            (bal_start, fees_start_btc, fees_start_eur, _), (bal_end, fees_end_btc, fees_end_eur,
+                                                             sales) = await asyncio.gather(
+                self.get_balance_at_height(client, addresses, start_height, price_map, fifo=fifo),
+                self.get_balance_at_height(client, addresses, end_height, price_map, fifo=fifo),
             )
 
             total_fees_btc = fees_end_btc - fees_start_btc
@@ -235,19 +261,17 @@ class BitcoinAnalyzer:
                 'price_end_eur': price_end,
                 'fees_btc': total_fees_btc,
                 'fees_eur': total_fees_eur,
+                'sales': sales if fifo else None
             }
-
-            if fifo:
-                result['sales'] = sales
 
             return result
 
 
-# analyzer = BitcoinAnalyzer()
-# result = asyncio.run(analyzer.run(
-#     'bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n',
-#     '2025-11-22',
-#     '2025-11-24',
-#     fifo=True
-# ))
-# print(json.dumps(result, indent=2))
+analyzer = BitcoinAnalyzer()
+result = asyncio.run(analyzer.run(
+    ['bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n'],
+    '2025-11-22',
+    '2025-11-25',
+    fifo=True
+))
+print(json.dumps(result, indent=2))
