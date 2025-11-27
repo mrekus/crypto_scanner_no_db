@@ -176,7 +176,7 @@ button:hover{background:var(--accent-hover);}
     <div class="results" id="results">
         <div><strong>Starting Balance:</strong> <span id="startBalance">-</span></div>
         <div><strong>Ending Balance:</strong> <span id="endBalance">-</span></div>
-        <div><strong>Gas Used:</strong> <span id="gasUsed">-</span></div>
+        <div><strong>Fees Paid:</strong> <span id="gasUsed">-</span></div>
 
         <div id="fifoSummaryContainer" style="display:none;">
             <div><strong>FIFO Summary:</strong></div>
@@ -364,17 +364,18 @@ form.addEventListener('submit', async (e) => {
                     const res = data.data;
                     window.lastWalletResult = res; // store result for AI
                     const tz = form.querySelector('select[name="timezone"]').value || 'UTC';
-                    const startEth = res.starting_balance?.eth ?? 0;
+                    const currency = res.starting_balance?.eth !== undefined ? 'ETH' : (res.starting_balance?.btc !== undefined ? 'BTC' : '');
+                    const startEth = res.starting_balance?.eth ?? res.starting_balance?.btc ?? 0;
                     const startEur = res.starting_balance?.eur ?? 0;
-                    const endEth = res.ending_balance?.eth ?? 0;
+                    const endEth = res.ending_balance?.eth ?? res.ending_balance?.btc ?? 0;
                     const endEur = res.ending_balance?.eur ?? 0;
 
-                    startBalanceEl.textContent = `${formatNumberForDisplay(startEth)} ETH (${formatEuro(startEur)})`;
-                    endBalanceEl.textContent = `${formatNumberForDisplay(endEth)} ETH (${formatEuro(endEur)})`;
+                    startBalanceEl.textContent = `${formatNumberForDisplay(startEth)} ${currency} (${formatEuro(startEur)})`;
+                    endBalanceEl.textContent = `${formatNumberForDisplay(endEth)} ${currency} (${formatEuro(endEur)})`;
 
-                    const gasEth = res.total_gas_eth ?? 0;
-                    const gasEur = res.total_gas_eur ?? 0;
-                    gasEl.textContent = `${formatNumberForDisplay(gasEth)} ETH (${formatEuro(gasEur)})`;
+                    const gasEth = res.fees ?? 0;
+                    const gasEur = res.fees_eur ?? 0;
+                    gasEl.textContent = `${formatNumberForDisplay(gasEth)} ${currency} (${formatEuro(gasEur)})`;
 
                     const startTokens = res.starting_balance?.tokens ?? {};
                     const endTokens = res.ending_balance?.tokens ?? {};
@@ -409,7 +410,7 @@ form.addEventListener('submit', async (e) => {
 
                     const ethRow = document.createElement('tr');
                     ethRow.innerHTML = `
-                        <td><strong>ETH</strong> — native</td>
+                        <td><strong>${currency}</strong> — native</td>
                         <td>${formatNumberForDisplay(startEth)}</td>
                         <td>${formatEuro(startEur)}</td>
                         <td>${formatNumberForDisplay(endEth)}</td>
@@ -539,7 +540,7 @@ form.addEventListener('submit', async (e) => {
                             }, 0);
                         }, 0);
 
-                        const gasFeesEur = res.total_gas_eur ?? 0;
+                        const gasFeesEur = res.fees_eur ?? 0;
                         const totalWalletProfit = totalProfit - gasFeesEur;
 
                         const totalProfitRow = document.createElement('tr');
@@ -551,7 +552,7 @@ form.addEventListener('submit', async (e) => {
 
                         const gasFeesRow = document.createElement('tr');
                         gasFeesRow.innerHTML = `
-                            <td colspan="3" style="padding:4px;font-weight:bold;">Gas Fees Paid</td>
+                            <td colspan="3" style="padding:4px;font-weight:bold;">Fees Paid</td>
                             <td style="padding:4px;font-weight:bold;">€${gasFeesEur.toFixed(4)}</td>
                         `;
                         fifoSummaryBody.appendChild(gasFeesRow);

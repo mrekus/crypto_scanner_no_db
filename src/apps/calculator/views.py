@@ -6,6 +6,7 @@ import json
 
 from starlette.responses import Response
 
+from apps.networks.bitcoin.calculator import BitcoinAnalyzer
 from apps.networks.ethereum.calculator import WalletAnalyzer
 from conf import cfg
 
@@ -27,31 +28,53 @@ async def check(
     wallets = [w.strip() for w in wallets[0].split(',')]
 
     async def event_generator():
-        analyzer = WalletAnalyzer()
         try:
+            is_btc = wallets[0].startswith('bc1') or wallets[0].startswith('1') or wallets[0].startswith('3')
+            analyzer = BitcoinAnalyzer() if is_btc else WalletAnalyzer()
             result = await analyzer.run(wallets, start_date, end_date, timezone, fifo)
-            payload = {
-                'starting_balance': {
-                    'eth': result['starting_balance']['ETH'],
-                    'eur': result['starting_balance']['ETH_eur'],
-                    'tokens': result['starting_balance']['tokens'],
-                },
-                'ending_balance': {
-                    'eth': result['ending_balance']['ETH'],
-                    'eur': result['ending_balance']['ETH_eur'],
-                    'tokens': result['ending_balance']['tokens'],
-                },
-                'total_gas_eth': result['total_gas_eth'],
-                'total_gas_eur': result['total_gas_eur'],
-                'outgoing': result['transactions']['outgoing'],
-                'incoming': result['transactions']['incoming'],
-                'sales': result['sales'],
-            }
 
-            yield f'data: {json.dumps({'type': 'result', 'data': payload})}\n\n'
+            if is_btc:
+                payload = {
+                    'starting_balance': {
+                        'btc': result['starting_balance']['BTC'],
+                        'eur': result['starting_balance']['BTC_eur'],
+                        'tokens': result['starting_balance']['tokens'],
+                    },
+                    'ending_balance': {
+                        'btc': result['ending_balance']['BTC'],
+                        'eur': result['ending_balance']['BTC_eur'],
+                        'tokens': result['ending_balance']['tokens'],
+                    },
+                    'fees': result['total_gas_btc'],
+                    'fees_eur': result['total_gas_eur'],
+                    'outgoing': result['transactions']['outgoing'],
+                    'incoming': result['transactions']['incoming'],
+                    'sales': result['sales'],
+                }
+            else:
+                payload = {
+                    'starting_balance': {
+                        'eth': result['starting_balance']['ETH'],
+                        'eur': result['starting_balance']['ETH_eur'],
+                        'tokens': result['starting_balance']['tokens'],
+                    },
+                    'ending_balance': {
+                        'eth': result['ending_balance']['ETH'],
+                        'eur': result['ending_balance']['ETH_eur'],
+                        'tokens': result['ending_balance']['tokens'],
+                    },
+                    'fees': result['total_gas_eth'],
+                    'fees_eur': result['total_gas_eur'],
+                    'outgoing': result['transactions']['outgoing'],
+                    'incoming': result['transactions']['incoming'],
+                    'sales': result['sales'],
+                }
+
+            yield f'data: {json.dumps({"type": "result", "data": payload})}\n\n'
 
         except Exception as e:
-            yield f'data: {json.dumps({'type': 'log', 'msg': str(e)})}\n\n'
+            yield f'data: {json.dumps({"type": "log", "msg": str(e)})}\n\n'
+
 
     return StreamingResponse(
         event_generator(),

@@ -272,6 +272,19 @@ class BitcoinAnalyzer:
             price_start = self.map_price(price_map, start_ts)
             price_end = self.map_price(price_map, end_ts)
 
+            def aggregate_transactions(transactions):
+                agg = defaultdict(
+                    lambda: {'hash': None, 'from': None, 'to': None, 'timestamp': None, 'amount': 0, 'value_eur': 0})
+                for tx in transactions:
+                    h = tx['hash']
+                    agg[h]['hash'] = h
+                    agg[h]['from'] = tx['from']
+                    agg[h]['to'] = tx['to']
+                    agg[h]['timestamp'] = tx['timestamp']
+                    agg[h]['amount'] += tx['amount']
+                    agg[h]['value_eur'] += tx['value_eur']
+                return list(agg.values())
+
             result = {
                 'starting_balance': {
                     'BTC': bal_start,
@@ -284,8 +297,8 @@ class BitcoinAnalyzer:
                     'tokens': {}
                 },
                 'transactions': {
-                    'incoming': incoming_tx,
-                    'outgoing': outgoing_tx
+                    'incoming': aggregate_transactions(incoming_tx),
+                    'outgoing': aggregate_transactions(outgoing_tx)
                 },
                 'total_gas_btc': total_fees_btc,
                 'total_gas_eur': total_fees_eur,
@@ -296,11 +309,11 @@ class BitcoinAnalyzer:
             return result
 
 
-analyzer = BitcoinAnalyzer()
-result = asyncio.run(analyzer.run(
-    ['bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n'],
-    '2025-11-22',
-    '2025-11-25',
-    fifo=True
-))
-print(json.dumps(result, indent=2))
+# analyzer = BitcoinAnalyzer()
+# result = asyncio.run(analyzer.run(
+#     ['bc1q4mhdqjk43v0tcx4jhvn273kxqlhn8a2w4r2n2n'],
+#     '2025-11-22',
+#     '2025-11-25',
+#     fifo=True
+# ))
+# print(json.dumps(result, indent=2))
