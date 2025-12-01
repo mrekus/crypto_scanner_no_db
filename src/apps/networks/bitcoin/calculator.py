@@ -174,31 +174,32 @@ class BitcoinAnalyzer:
     @staticmethod
     def calculate_fifo_sales(incoming, outgoing, cutoff_ts, start_ts=None):
         queues = {token: [dict(tx) for tx in txs] for token, txs in incoming.items()}
+
         sales = defaultdict(list)
 
         for token, outs in outgoing.items():
             if token not in queues:
                 continue
+
             for out in outs:
-                if out['timestamp'] > cutoff_ts:
-                    continue
-                to_remove = out['amount']
-                sell_price = out.get('price', 'unknown')
                 sell_ts = out['timestamp']
+                sell_price = out.get('price', 'unknown')
+                to_remove = out['amount']
+                if sell_ts > cutoff_ts:
+                    continue
+
                 while to_remove > 0 and queues[token]:
-                    last_in = queues[token][0]
-                    avail = last_in['amount']
-                    buy_price = last_in.get('price', 'unknown')
-                    buy_ts = last_in['timestamp']
+                    buy_lot = queues[token][0]
+                    buy_ts = buy_lot['timestamp']
+                    buy_price = buy_lot.get('price', 'unknown')
+                    avail = buy_lot['amount']
 
                     if avail <= to_remove:
                         used_amt = avail
                         queues[token].pop(0)
                     else:
                         used_amt = to_remove
-                        last_in['amount'] -= used_amt
-                        if last_in['price'] != 'unknown':
-                            last_in['value_eur'] = last_in['amount'] * last_in['price']
+                        buy_lot['amount'] -= used_amt
 
                     if buy_price != 'unknown' and sell_price != 'unknown':
                         sales[token].append({
