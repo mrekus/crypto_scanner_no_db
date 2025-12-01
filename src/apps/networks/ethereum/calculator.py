@@ -19,7 +19,7 @@ class WalletAnalyzer:
         self.ALCHEMY_API_KEY = cfg.ALCHEMY_API_KEY
         self.CG_API_KEY = cfg.CG_API_KEY
         self.URL_API = f'https://eth-mainnet.g.alchemy.com/v2/{self.ALCHEMY_API_KEY}'
-        self.URL_BLOCKS = f'https://api.g.alchemy.com/data/v1/{self.ALCHEMY_API_KEY}/utility/blocks/by-timestamp'
+        self.ETHERSCAN_API_URL = 'https://api.etherscan.io/v2/api'
         self.CG_PRICE_RANGE_URL = 'https://pro-api.coingecko.com/api/v3/coins/{token_id}/market_chart/range'
         self.contract_to_id_map = load_json_file('apps/networks/ethereum/cg_eth_contract_id_map.json')
         self.token_metadata_path = 'apps/networks/ethereum/token_metadata.json'
@@ -28,17 +28,21 @@ class WalletAnalyzer:
         # self.semaphore = asyncio.Semaphore(8)
 
 
-    async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int) -> str:
-        headers = {'Authorization': f'Bearer {self.ALCHEMY_API_KEY}'}
+    async def get_block_by_timestamp(self, client: httpx.AsyncClient, timestamp: int, closest: str = 'after') -> str:
         params = {
-            'networks': 'eth-mainnet',
+            'module': 'block',
+            'chainid': '1',
+            'action': 'getblocknobytime',
             'timestamp': timestamp,
-            'direction': 'AFTER'
+            'closest': closest,
+            'apikey': cfg.ETHERSCAN_API_KEY,
         }
-        resp = await client.get(self.URL_BLOCKS, params=params, headers=headers)
+        resp = await client.get(self.ETHERSCAN_API_URL, params=params)
         resp.raise_for_status()
-
-        return hex(resp.json()['data'][0]['block']['number'])
+        result = resp.json()
+        if result.get('status') != '1' or 'result' not in result:
+            raise ValueError(f"Etherscan getblocknobytime failed: {result}")
+        return hex(int(result['result']))
 
 
     async def get_wallet_eth_balance(self, client: httpx.AsyncClient, wallet: str, block_number: str) -> float:

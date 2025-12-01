@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     CG_API_KEY = os.getenv("CG_API_KEY")
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     MAESTRO_API_KEY = os.getenv("MAESTRO_API_KEY")
+    ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY")
     CORS_ENDPOINT = os.getenv("CORS_ENDPOINT")
     MAESTRO_API_URL = 'https://xbt-mainnet.gomaestro-api.org/v0'
 
