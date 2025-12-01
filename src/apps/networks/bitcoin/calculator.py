@@ -99,11 +99,12 @@ class BitcoinAnalyzer:
         outgoing_txs = []
 
         for tx_summary in txs:
-            height = tx_summary.get('height')
+
+            full_tx = await self.get_full_tx(client, tx_summary['tx_hash'])
+            height = full_tx.get('height')
             if height is None or height > up_to_height:
                 continue
 
-            full_tx = await self.get_full_tx(client, tx_summary['tx_hash'])
             txid = tx_summary['tx_hash']
             ts_str = full_tx.get('timestamp')
             if ts_str:
@@ -113,24 +114,40 @@ class BitcoinAnalyzer:
                 ts = None
 
             for idx, out in enumerate(full_tx.get('outputs', [])):
-                if out.get('address') in wallets:
-                    utxos[f'{txid}:{idx}'] = int(out['satoshis'])
-                    tx_data = {
-                        'hash': txid,
-                        'to': out.get('address'),
-                        'from': full_tx.get('inputs', [{}])[0].get('address', 'unknown'),
+                addrs = out.get('address')
+                if not addrs:
+                    continue
+
+                if isinstance(addrs, list):
+                    matched = [a for a in addrs if a in wallets]
+                    if not matched:
+                        continue
+                    addr = matched[0]
+                else:
+                    if addrs not in wallets:
+                        continue
+                    addr = addrs
+
+                utxos[f'{txid}:{idx}'] = int(out['satoshis'])
+                tx_data = {
+                    'hash': txid,
+                    'to': addr,
+                    'from': full_tx.get('inputs', [{}])[0].get('address', 'unknown'),
+                    'amount': int(out['satoshis']) / 1e8,
+                    'timestamp': ts,
+                    'value_eur': (
+                            int(out['satoshis']) / 1e8 *
+                            price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
+                    ) if ts else 'unknown',
+                }
+                incoming_txs.append(tx_data)
+
+                if fifo:
+                    incoming['BTC'].append({
                         'amount': int(out['satoshis']) / 1e8,
                         'timestamp': ts,
-                        'value_eur': (int(out['satoshis']) / 1e8 * price_map[
-                            min(price_map.keys(), key=lambda k: abs(k - ts))]) if ts else 'unknown',
-                    }
-                    incoming_txs.append(tx_data)
-                    if fifo:
-                        incoming['BTC'].append({
-                            'amount': int(out['satoshis']) / 1e8,
-                            'timestamp': ts,
-                            'price': price_map[min(price_map.keys(), key=lambda k: abs(k - ts))] if ts else 'unknown'
-                        })
+                        'price': price_map[min(price_map.keys(), key=lambda k: abs(k - ts))] if ts else 'unknown'
+                    })
 
             for inp in full_tx.get('inputs', []):
                 if inp.get('address') in wallets:
@@ -174,32 +191,31 @@ class BitcoinAnalyzer:
     @staticmethod
     def calculate_fifo_sales(incoming, outgoing, cutoff_ts, start_ts=None):
         queues = {token: [dict(tx) for tx in txs] for token, txs in incoming.items()}
-
         sales = defaultdict(list)
 
         for token, outs in outgoing.items():
             if token not in queues:
                 continue
-
             for out in outs:
-                sell_ts = out['timestamp']
-                sell_price = out.get('price', 'unknown')
-                to_remove = out['amount']
-                if sell_ts > cutoff_ts:
+                if out['timestamp'] > cutoff_ts:
                     continue
-
+                to_remove = out['amount']
+                sell_price = out.get('price', 'unknown')
+                sell_ts = out['timestamp']
                 while to_remove > 0 and queues[token]:
-                    buy_lot = queues[token][0]
-                    buy_ts = buy_lot['timestamp']
-                    buy_price = buy_lot.get('price', 'unknown')
-                    avail = buy_lot['amount']
+                    last_in = queues[token][0]
+                    avail = last_in['amount']
+                    buy_price = last_in.get('price', 'unknown')
+                    buy_ts = last_in['timestamp']
 
                     if avail <= to_remove:
                         used_amt = avail
                         queues[token].pop(0)
                     else:
                         used_amt = to_remove
-                        buy_lot['amount'] -= used_amt
+                        last_in['amount'] -= used_amt
+                        if last_in['price'] != 'unknown':
+                            last_in['value_eur'] = last_in['amount'] * last_in['price']
 
                     if buy_price != 'unknown' and sell_price != 'unknown':
                         sales[token].append({
