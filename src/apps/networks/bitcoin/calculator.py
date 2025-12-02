@@ -114,40 +114,24 @@ class BitcoinAnalyzer:
                 ts = None
 
             for idx, out in enumerate(full_tx.get('outputs', [])):
-                addrs = out.get('address')
-                if not addrs:
-                    continue
-
-                if isinstance(addrs, list):
-                    matched = [a for a in addrs if a in wallets]
-                    if not matched:
-                        continue
-                    addr = matched[0]
-                else:
-                    if addrs not in wallets:
-                        continue
-                    addr = addrs
-
-                utxos[f'{txid}:{idx}'] = int(out['satoshis'])
-                tx_data = {
-                    'hash': txid,
-                    'to': addr,
-                    'from': full_tx.get('inputs', [{}])[0].get('address', 'unknown'),
-                    'amount': int(out['satoshis']) / 1e8,
-                    'timestamp': ts,
-                    'value_eur': (
-                            int(out['satoshis']) / 1e8 *
-                            price_map[min(price_map.keys(), key=lambda k: abs(k - ts))]
-                    ) if ts else 'unknown',
-                }
-                incoming_txs.append(tx_data)
-
-                if fifo:
-                    incoming['BTC'].append({
+                if out.get('address') in wallets:
+                    utxos[f'{txid}:{idx}'] = int(out['satoshis'])
+                    tx_data = {
+                        'hash': txid,
+                        'to': out.get('address'),
+                        'from': full_tx.get('inputs', [{}])[0].get('address', 'unknown'),
                         'amount': int(out['satoshis']) / 1e8,
                         'timestamp': ts,
-                        'price': price_map[min(price_map.keys(), key=lambda k: abs(k - ts))] if ts else 'unknown'
-                    })
+                        'value_eur': (int(out['satoshis']) / 1e8 * price_map[
+                            min(price_map.keys(), key=lambda k: abs(k - ts))]) if ts else 'unknown',
+                    }
+                    incoming_txs.append(tx_data)
+                    if fifo:
+                        incoming['BTC'].append({
+                            'amount': int(out['satoshis']) / 1e8,
+                            'timestamp': ts,
+                            'price': price_map[min(price_map.keys(), key=lambda k: abs(k - ts))] if ts else 'unknown'
+                        })
 
             for inp in full_tx.get('inputs', []):
                 if inp.get('address') in wallets:
