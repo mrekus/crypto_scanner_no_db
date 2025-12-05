@@ -8,6 +8,7 @@ from starlette.responses import Response
 
 from apps.networks.bitcoin.calculator import BitcoinAnalyzer
 from apps.networks.ethereum.calculator import WalletAnalyzer
+from apps.networks.solana.calculator import SolanaAnalyzer
 from conf import cfg
 
 router = APIRouter()
@@ -29,8 +30,20 @@ async def check(
 
     async def event_generator():
         try:
-            is_btc = wallets[0].startswith('bc1') or wallets[0].startswith('1') or wallets[0].startswith('3')
-            analyzer = BitcoinAnalyzer() if is_btc else WalletAnalyzer()
+            wallet = wallets[0]
+            is_btc = wallet.startswith('bc1') or wallet.startswith('1') or wallet.startswith('3')
+            is_eth = wallet.startswith('0x')
+            is_solana = len(wallet) in (43, 44)  # typical Solana address length
+
+            if is_btc:
+                analyzer = BitcoinAnalyzer()
+            elif is_eth:
+                analyzer = WalletAnalyzer()
+            elif is_solana:
+                analyzer = SolanaAnalyzer()
+            else:
+                raise ValueError("Unknown wallet type")
+
             result = await analyzer.run(wallets, start_date, end_date, timezone, fifo)
 
             if is_btc:
@@ -51,7 +64,7 @@ async def check(
                     'incoming': result['transactions']['incoming'],
                     'sales': result['sales'],
                 }
-            else:
+            elif is_eth:
                 payload = {
                     'starting_balance': {
                         'eth': result['starting_balance']['ETH'],
@@ -64,6 +77,24 @@ async def check(
                         'tokens': result['ending_balance']['tokens'],
                     },
                     'fees': result['total_gas_eth'],
+                    'fees_eur': result['total_gas_eur'],
+                    'outgoing': result['transactions']['outgoing'],
+                    'incoming': result['transactions']['incoming'],
+                    'sales': result['sales'],
+                }
+            elif is_solana:
+                payload = {
+                    'starting_balance': {
+                        'sol': result['starting_balance']['SOL'],
+                        'eur': result['starting_balance']['SOL_eur'],
+                        'tokens': result['starting_balance']['tokens'],
+                    },
+                    'ending_balance': {
+                        'sol': result['ending_balance']['SOL'],
+                        'eur': result['ending_balance']['SOL_eur'],
+                        'tokens': result['ending_balance']['tokens'],
+                    },
+                    'fees': result['total_gas_sol'],
                     'fees_eur': result['total_gas_eur'],
                     'outgoing': result['transactions']['outgoing'],
                     'incoming': result['transactions']['incoming'],
