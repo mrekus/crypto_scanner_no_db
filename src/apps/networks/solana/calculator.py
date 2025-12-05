@@ -17,11 +17,38 @@ class SolanaAnalyzer:
         self.SOL_TOKEN_ID = "solana"
         self.contract_to_id_map = {}
 
+
     async def fetch_all(self, wallet: str) -> List[Dict[str, Any]]:
-        return [
-            {"signature": "sig1", "slot": 1054, "blockTime": 1641038400},
-            {"signature": "sig2", "slot": 1055, "blockTime": 1641038460}
-        ]
+        txs = []
+        before = None
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            while True:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTransactionsForAddress",
+                    "params": [
+                        wallet,
+                        {
+                            "limit": 1000,
+                            "before": before,
+                            "encoding": "jsonParsed"
+                        }
+                    ]
+                }
+
+                async with self.sem:
+                    resp = await client.post(self.rpc_url, json=payload)
+                resp.raise_for_status()
+
+                result = resp.json()["result"]
+                batch = result["data"]
+
+                txs.extend(batch)
+
+                return txs
+
 
     async def fetch_full(self, client, sig: str) -> Dict[str, Any]:
         payload = {"jsonrpc": "2.0", "id": 1, "method": "getTransaction", "params": [sig, {"encoding": "jsonParsed"}]}
@@ -30,12 +57,14 @@ class SolanaAnalyzer:
         r.raise_for_status()
         return r.json()["result"]
 
+
     async def fetch_balance_at(self, client, wallet: str, block: int) -> int:
         payload = {"jsonrpc": "2.0", "id": 1, "method": "getBalance", "params": [wallet, {"commitment": "confirmed", "minContextSlot": block}]}
         async with self.sem:
             r = await client.post(self.rpc_url, json=payload)
         r.raise_for_status()
         return r.json()["result"]["value"]
+
 
     async def get_token_prices(self, client, token_id: str, start_ts: int, end_ts: int, headers: dict):
         url = self.CG_PRICE_RANGE_URL.format(token_id=token_id)
@@ -44,6 +73,7 @@ class SolanaAnalyzer:
         r.raise_for_status()
         return {int(ts / 1000): price for ts, price in r.json().get("prices", [])}
 
+
     def map_price(self, price_map, ts):
         if not price_map:
             return "unknown"
@@ -51,6 +81,7 @@ class SolanaAnalyzer:
         if key in price_map:
             return price_map[key]
         return price_map[min(price_map.keys(), key=lambda k: abs(k - key))]
+
 
     async def reconstruct_fifo(self, incoming: Dict[str, List[dict]], outgoing: Dict[str, List[dict]], price_map: dict):
         queues = {token: [dict(tx) for tx in txs] for token, txs in incoming.items()}
@@ -88,6 +119,7 @@ class SolanaAnalyzer:
                         })
                     to_remove -= used_amt
         return sales
+
 
     async def run(self, wallets: List[str], start_date: str, end_date: str, timezone: str = "UTC", fifo=False) -> Dict[str, Any]:
         tz = ZoneInfo(timezone)
